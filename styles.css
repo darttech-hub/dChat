@@ -277,8 +277,8 @@ button {
 }
 
 .chat-panel {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   height: 100vh;
   height: 100dvh;
@@ -287,10 +287,12 @@ button {
 }
 
 .mobile-topbar {
+  flex: 0 0 auto;
   display: none;
 }
 
 .chat-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -387,9 +389,11 @@ select {
 
 .message-stream {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 24px clamp(16px, 4vw, 52px);
@@ -420,6 +424,7 @@ select {
 .message {
   display: grid;
   gap: 7px;
+  min-width: 0;
   max-width: min(760px, 88%);
 }
 
@@ -445,9 +450,12 @@ select {
 
 .message-bubble {
   font-size: var(--chat-font-size);
+  min-width: 0;
+  max-width: 100%;
   padding: 13px 15px;
   border-radius: 8px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.55;
 }
@@ -465,6 +473,11 @@ select {
 
 .message.model .message-bubble.markdown-body {
   white-space: normal;
+}
+
+.markdown-body {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .markdown-body > :first-child {
@@ -536,6 +549,7 @@ select {
 
 .markdown-body pre {
   position: relative;
+  max-width: 100%;
   overflow-x: auto;
   padding: 14px;
   border-radius: 8px;
@@ -578,6 +592,7 @@ select {
 }
 
 .markdown-table-wrap {
+  max-width: 100%;
   overflow-x: auto;
 }
 
@@ -613,13 +628,16 @@ select {
 
 .composer {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) 48px;
   align-items: end;
   gap: 10px;
+  min-height: 0;
   padding: 16px clamp(16px, 4vw, 52px) 22px;
   border-top: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.70);
   backdrop-filter: blur(14px);
+  z-index: 2;
 }
 
 .composer textarea {

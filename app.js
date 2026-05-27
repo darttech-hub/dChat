@@ -6,6 +6,7 @@ const DB_NAME = "gemini-chat-local-db";
 const DB_VERSION = 1;
 const DB_STORE = "keyValue";
 const DB_STATE_KEY = "app-state:v1";
+const HIGH_DEMAND_RETRY_DELAYS_MS = [3000, 6000, 10000];
 const DEFAULT_MODELS = [
   "models/gemini-2.5-flash",
   "models/gemini-2.5-pro",
@@ -53,6 +54,7 @@ const els = {
 
 let state = createDefaultState();
 let activeRequest = null;
+let isComposingMessage = false;
 
 function createRoom(name = "새 채팅방") {
   return {
@@ -351,6 +353,7 @@ function render() {
 
 function switchRoom(roomId) {
   state.activeRoomId = roomId;
+  clearComposerInput();
   closeMobilePanels();
   render();
   scrollMessagesToBottom();
@@ -360,6 +363,7 @@ function addRoom() {
   const room = createRoom(`채팅방 ${state.rooms.length + 1}`);
   state.rooms.push(room);
   state.activeRoomId = room.id;
+  clearComposerInput();
   render();
   els.roomTitleInput.focus();
   els.roomTitleInput.select();
@@ -591,8 +595,92 @@ function extractGeminiText(data) {
   return text || "응답 텍스트가 비어 있습니다.";
 }
 
+function createAbortError() {
+  const error = new Error("요청이 취소되었습니다.");
+  error.name = "AbortError";
+  return error;
+}
+
+function isHighDemandError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    message.includes("currently experiencing high demand") ||
+    message.includes("spikes in demand") ||
+    message.includes("please try again later") ||
+    message.includes("model is overloaded") ||
+    (error?.status === 503 && message.includes("temporar"))
+  );
+}
+
+function wait(ms, signal) {
+  if (signal?.aborted) return Promise.reject(createAbortError());
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(resolve, ms);
+    const abort = () => {
+      window.clearTimeout(timeoutId);
+      reject(createAbortError());
+    };
+
+    signal?.addEventListener("abort", abort, { once: true });
+    window.setTimeout(() => signal?.removeEventListener("abort", abort), ms);
+  });
+}
+
+async function waitBeforeRetry(delayMs, retryNumber, maxRetries, pending, signal) {
+  const startedAt = Date.now();
+  let remainingMs = delayMs;
+
+  while (remainingMs > 0) {
+    const seconds = Math.ceil(remainingMs / 1000);
+    pending.text = `다시 요청합니다.\n${seconds}초 후 자동으로 다시 요청합니다. (${retryNumber}/${maxRetries})`;
+    setStatus(`모델 사용량이 높아 ${seconds}초 후 다시 요청합니다. (${retryNumber}/${maxRetries})`);
+    renderMessages();
+
+    await wait(Math.min(1000, remainingMs), signal);
+    remainingMs = delayMs - (Date.now() - startedAt);
+  }
+}
+
+async function requestGeminiResponse(room, key, signal) {
+  const endpointModel = room.model.replace(/[^a-zA-Z0-9_.\/-]/g, "");
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/${endpointModel}:generateContent?key=${encodeURIComponent(key)}`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: toGeminiContents(room.messages.filter((message) => !message.pending)),
+      generationConfig: {
+        temperature: state.settings.temperature,
+        maxOutputTokens: state.settings.maxOutputTokens
+      }
+    }),
+    signal
+  });
+
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {
+    data = {};
+  }
+  if (!response.ok) {
+    const error = new Error(data.error?.message || "Gemini 요청에 실패했습니다.");
+    error.status = response.status;
+    throw error;
+  }
+
+  return data;
+}
+
 async function sendMessage(event) {
   event.preventDefault();
+
+  if (isComposingMessage) {
+    els.messageInput.focus();
+    setStatus("한글 입력을 확정한 뒤 전송하세요.");
+    return;
+  }
 
   const key = getApiKey();
   const text = els.messageInput.value.trim();
@@ -611,8 +699,7 @@ async function sendMessage(event) {
   room.messages.push({ role: "user", text, createdAt: Date.now() });
   room.messages.push({ role: "model", text: "응답을 기다리는 중입니다.", pending: true, createdAt: Date.now() });
   room.updatedAt = Date.now();
-  els.messageInput.value = "";
-  resizeComposer();
+  clearComposerInput();
   render();
 
   const controller = new AbortController();
@@ -621,27 +708,31 @@ async function sendMessage(event) {
   setStatus(`${formatModelLabel(room.model)} 응답 생성 중입니다.`);
 
   try {
-    const endpointModel = room.model.replace(/[^a-zA-Z0-9_.\/-]/g, "");
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/${endpointModel}:generateContent?key=${encodeURIComponent(key)}`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: toGeminiContents(room.messages.filter((message) => !message.pending)),
-        generationConfig: {
-          temperature: state.settings.temperature,
-          maxOutputTokens: state.settings.maxOutputTokens
-        }
-      }),
-      signal: controller.signal
-    });
+    const pending = room.messages.findLast((message) => message.pending);
+    let data = null;
 
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error?.message || "Gemini 요청에 실패했습니다.");
+    for (let retryIndex = 0; retryIndex <= HIGH_DEMAND_RETRY_DELAYS_MS.length; retryIndex += 1) {
+      try {
+        if (retryIndex > 0 && pending) {
+          pending.text = "다시 요청합니다.\nGemini에 재요청 중입니다.";
+          renderMessages();
+        }
+        data = await requestGeminiResponse(room, key, controller.signal);
+        break;
+      } catch (error) {
+        const canRetry = retryIndex < HIGH_DEMAND_RETRY_DELAYS_MS.length && isHighDemandError(error);
+        if (!canRetry || !pending) throw error;
+
+        await waitBeforeRetry(
+          HIGH_DEMAND_RETRY_DELAYS_MS[retryIndex],
+          retryIndex + 1,
+          HIGH_DEMAND_RETRY_DELAYS_MS.length,
+          pending,
+          controller.signal
+        );
+      }
     }
 
-    const pending = room.messages.findLast((message) => message.pending);
     if (pending) {
       pending.pending = false;
       pending.text = extractGeminiText(data);
@@ -666,6 +757,11 @@ async function sendMessage(event) {
 function resizeComposer() {
   els.messageInput.style.height = "auto";
   els.messageInput.style.height = `${Math.min(els.messageInput.scrollHeight, 170)}px`;
+}
+
+function clearComposerInput() {
+  els.messageInput.value = "";
+  resizeComposer();
 }
 
 function scrollMessagesToBottom() {
@@ -735,11 +831,22 @@ els.roomModelSelect.addEventListener("change", (event) => updateRoomModel(event.
 els.defaultModelSelect.addEventListener("change", (event) => updateDefaultModel(event.target.value));
 els.composer.addEventListener("submit", sendMessage);
 els.messageInput.addEventListener("input", resizeComposer);
+els.messageInput.addEventListener("compositionstart", () => {
+  isComposingMessage = true;
+});
+els.messageInput.addEventListener("compositionend", () => {
+  isComposingMessage = false;
+  resizeComposer();
+});
 els.messageInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
+  const isImeConfirming = event.isComposing || isComposingMessage || event.keyCode === 229;
+  if (event.key === "Enter" && !event.shiftKey && !isImeConfirming) {
     event.preventDefault();
     els.composer.requestSubmit();
   }
+});
+els.messageInput.addEventListener("blur", () => {
+  isComposingMessage = false;
 });
 
 els.temperatureInput.addEventListener("input", (event) => {
