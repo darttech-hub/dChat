@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gemini Chat Rooms</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell" id="appShell">
+      <aside class="sidebar" aria-label="채팅방 목록">
+        <div class="brand-row">
+          <div class="brand-mark" aria-hidden="true">G</div>
+          <div class="brand-copy">
+            <h1>Gemini Chat</h1>
+            <p>Room workspace</p>
+          </div>
+          <button class="panel-toggle" id="toggleSidebarButton" type="button" aria-label="왼쪽 패널 접기" title="왼쪽 패널 접기">
+            <span aria-hidden="true">‹</span>
+          </button>
+        </div>
+
+        <button class="primary-action" id="newRoomButton" type="button">
+          <span aria-hidden="true">+</span>
+          새 채팅방
+        </button>
+
+        <div class="room-list" id="roomList" role="list"></div>
+      </aside>
+
+      <main class="chat-panel">
+        <header class="mobile-topbar">
+          <button class="icon-button" id="openRoomsButton" type="button" aria-label="채팅방 열기">
+            <span aria-hidden="true">☰</span>
+          </button>
+          <strong>Gemini Chat</strong>
+          <button class="icon-button" id="openSettingsButton" type="button" aria-label="설정 열기">
+            <span aria-hidden="true">⚙</span>
+          </button>
+        </header>
+
+        <section class="chat-header" aria-label="현재 채팅방">
+          <div>
+            <input class="room-title-input" id="roomTitleInput" type="text" aria-label="채팅방 이름" />
+            <p id="roomMeta">0 messages</p>
+          </div>
+          <div class="chat-header-actions">
+            <button class="share-button" id="shareRoomButton" type="button" aria-label="대화 공유" title="대화 공유">
+              <span aria-hidden="true">↗</span>
+            </button>
+            <button class="danger-icon" id="deleteRoomButton" type="button" aria-label="채팅방 삭제">
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="message-stream" id="messageStream" aria-live="polite"></section>
+
+        <form class="composer" id="composer">
+          <textarea id="messageInput" rows="1" placeholder="메시지를 입력하세요" aria-label="메시지"></textarea>
+          <button class="send-button" id="sendButton" type="submit" aria-label="보내기">
+            <span aria-hidden="true">↑</span>
+          </button>
+        </form>
+      </main>
+
+      <aside class="settings-panel" aria-label="Gemini 설정">
+        <div class="settings-header">
+          <div class="settings-title">
+            <h2>Settings</h2>
+            <p>API and model</p>
+          </div>
+          <button class="panel-toggle" id="toggleSettingsPanelButton" type="button" aria-label="오른쪽 패널 접기" title="오른쪽 패널 접기">
+            <span aria-hidden="true">›</span>
+          </button>
+        </div>
+
+        <div class="panel-section">
+          <h2>API</h2>
+          <label class="field-label" for="apiKeyInput">Gemini API key</label>
+          <div class="secret-row">
+            <input id="apiKeyInput" type="password" autocomplete="off" placeholder="AIza..." />
+            <button class="ghost-button" id="toggleKeyButton" type="button">보기</button>
+          </div>
+          <label class="check-row">
+            <input id="rememberKeyInput" type="checkbox" />
+            이 브라우저에 저장
+          </label>
+        </div>
+
+        <div class="panel-section">
+          <h2>Model</h2>
+          <button class="secondary-action" id="loadModelsButton" type="button">모델 불러오기</button>
+          <label class="field-label" for="roomModelSelect">현재 채팅방 모델</label>
+          <select id="roomModelSelect" aria-label="현재 채팅방 모델 선택"></select>
+          <label class="field-label" for="defaultModelSelect">새 채팅방 기본 모델</label>
+          <select id="defaultModelSelect"></select>
+        </div>
+
+        <div class="panel-section">
+          <h2>Options</h2>
+          <label class="field-label" for="temperatureInput">Temperature <span id="temperatureValue">0.7</span></label>
+          <input id="temperatureInput" type="range" min="0" max="1" step="0.1" value="0.7" />
+          <label class="field-label" for="maxTokensInput">Max output tokens</label>
+          <input id="maxTokensInput" type="number" min="64" max="8192" step="64" value="2048" />
+          <label class="field-label" for="chatFontSizeInput">대화 글씨 크기 <span id="chatFontSizeValue">16px</span></label>
+          <input id="chatFontSizeInput" type="range" min="14" max="22" step="1" value="16" />
+        </div>
+
+        <div class="panel-section status-section">
+          <h2>Status</h2>
+          <p id="statusText">API 키를 입력하면 대화를 시작할 수 있습니다.</p>
+        </div>
+      </aside>
+    </div>
+
+    <div class="overlay" id="overlay" hidden></div>
+    <div class="share-dialog" id="shareDialog" role="dialog" aria-modal="true" aria-labelledby="shareDialogTitle" hidden>
+      <div class="share-dialog-panel">
+        <div class="share-dialog-header">
+          <div>
+            <h2 id="shareDialogTitle">대화 공유</h2>
+            <p>복사가 차단되면 아래 내용을 직접 선택해 공유하세요.</p>
+          </div>
+          <button class="icon-button" id="closeShareDialogButton" type="button" aria-label="공유 창 닫기">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <textarea id="shareTextOutput" readonly aria-label="공유할 대화 내용"></textarea>
+        <div class="share-dialog-actions">
+          <button class="secondary-action" id="copyShareTextButton" type="button">복사</button>
+        </div>
+      </div>
+    </div>
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
