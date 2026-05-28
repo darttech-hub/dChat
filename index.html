@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Gemini Chat Rooms</title>
+    <title>dChat</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
       <aside class="sidebar" aria-label="채팅방 목록">
         <div class="brand-row">
-          <div class="brand-mark" aria-hidden="true">G</div>
+          <div class="brand-mark" aria-hidden="true">d</div>
           <div class="brand-copy">
-            <h1>Gemini Chat</h1>
-            <p>Room workspace</p>
+            <h1>dChat</h1>
+            <p>Gemini & Groq</p>
           </div>
           <button class="panel-toggle" id="toggleSidebarButton" type="button" aria-label="왼쪽 패널 접기" title="왼쪽 패널 접기">
             <span aria-hidden="true">‹</span>
@@ -33,7 +33,7 @@
           <button class="icon-button" id="openRoomsButton" type="button" aria-label="채팅방 열기">
             <span aria-hidden="true">☰</span>
           </button>
-          <strong>Gemini Chat</strong>
+          <strong>dChat</strong>
           <button class="icon-button" id="openSettingsButton" type="button" aria-label="설정 열기">
             <span aria-hidden="true">⚙</span>
           </button>
@@ -45,6 +45,12 @@
             <p id="roomMeta">0 messages</p>
           </div>
           <div class="chat-header-actions">
+            <button class="edit-title-button" id="editRoomTitleButton" type="button" aria-label="채팅방 이름 수정" title="채팅방 이름 수정">
+              <span aria-hidden="true">✎</span>
+            </button>
+            <button class="instruction-button" id="openInstructionButton" type="button" aria-label="채팅방 지침" title="채팅방 지침">
+              <span aria-hidden="true">¶</span>
+            </button>
             <button class="share-button" id="shareRoomButton" type="button" aria-label="대화 공유" title="대화 공유">
               <span aria-hidden="true">↗</span>
             </button>
@@ -64,7 +70,7 @@
         </form>
       </main>
 
-      <aside class="settings-panel" aria-label="Gemini 설정">
+      <aside class="settings-panel" aria-label="AI 설정">
         <div class="settings-header">
           <div class="settings-title">
             <h2>Settings</h2>
@@ -84,15 +90,34 @@
           </div>
           <label class="check-row">
             <input id="rememberKeyInput" type="checkbox" />
-            이 브라우저에 저장
+            Gemini 키 저장
+          </label>
+          <label class="field-label" for="groqApiKeyInput">Groq API key</label>
+          <div class="secret-row">
+            <input id="groqApiKeyInput" type="password" autocomplete="off" placeholder="gsk_..." />
+            <button class="ghost-button" id="toggleGroqKeyButton" type="button">보기</button>
+          </div>
+          <label class="check-row">
+            <input id="rememberGroqKeyInput" type="checkbox" />
+            Groq 키 저장
           </label>
         </div>
 
         <div class="panel-section">
           <h2>Model</h2>
           <button class="secondary-action" id="loadModelsButton" type="button">모델 불러오기</button>
+          <label class="field-label" for="roomProviderSelect">현재 채팅방 제공자</label>
+          <select id="roomProviderSelect" aria-label="현재 채팅방 제공자 선택">
+            <option value="gemini">Gemini</option>
+            <option value="groq">Groq</option>
+          </select>
           <label class="field-label" for="roomModelSelect">현재 채팅방 모델</label>
           <select id="roomModelSelect" aria-label="현재 채팅방 모델 선택"></select>
+          <label class="field-label" for="defaultProviderSelect">새 채팅방 기본 제공자</label>
+          <select id="defaultProviderSelect" aria-label="새 채팅방 기본 제공자 선택">
+            <option value="gemini">Gemini</option>
+            <option value="groq">Groq</option>
+          </select>
           <label class="field-label" for="defaultModelSelect">새 채팅방 기본 모델</label>
           <select id="defaultModelSelect"></select>
         </div>
@@ -103,6 +128,21 @@
           <input id="temperatureInput" type="range" min="0" max="1" step="0.1" value="0.7" />
           <label class="field-label" for="maxTokensInput">Max output tokens</label>
           <input id="maxTokensInput" type="number" min="64" max="8192" step="64" value="2048" />
+          <label class="check-row">
+            <input id="includeHistoryInput" type="checkbox" />
+            이전 대화 포함
+          </label>
+          <label class="field-label" for="historyLimitInput">이전 대화 최근 메시지 수 <span id="historyLimitValue">20</span></label>
+          <input id="historyLimitInput" type="number" min="1" max="100" step="1" value="20" />
+          <label class="check-row">
+            <input id="compactResponsesInput" type="checkbox" />
+            큰 응답 자동 압축
+          </label>
+          <label class="field-label" for="compactThresholdInput">압축 기준 <span id="compactThresholdValue">2000자</span></label>
+          <input id="compactThresholdInput" type="number" min="500" max="50000" step="500" value="2000" />
+          <label class="field-label" for="compactLengthInput">압축 길이 <span id="compactLengthValue">600자</span></label>
+          <input id="compactLengthInput" type="number" min="100" max="4000" step="100" value="600" />
+          <p class="context-meter" id="contextSizeText">전송 예상: 0개 메시지 · 0 B</p>
           <label class="field-label" for="chatFontSizeInput">대화 글씨 크기 <span id="chatFontSizeValue">16px</span></label>
           <input id="chatFontSizeInput" type="range" min="14" max="22" step="1" value="16" />
         </div>
@@ -115,6 +155,24 @@
     </div>
 
     <div class="overlay" id="overlay" hidden></div>
+    <div class="share-dialog" id="instructionDialog" role="dialog" aria-modal="true" aria-labelledby="instructionDialogTitle" hidden>
+      <div class="share-dialog-panel">
+        <div class="share-dialog-header">
+          <div>
+            <h2 id="instructionDialogTitle">채팅방 지침</h2>
+            <p>이 지침은 이전 대화 포함 여부와 관계없이 항상 함께 전송됩니다.</p>
+          </div>
+          <button class="icon-button" id="closeInstructionDialogButton" type="button" aria-label="지침 창 닫기">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <textarea id="instructionTextInput" aria-label="채팅방 지침" placeholder="예: 답변은 한국어로 간결하게 작성하고, 코드 예시는 필요한 경우에만 보여줘."></textarea>
+        <div class="share-dialog-actions">
+          <button class="ghost-button" id="clearInstructionButton" type="button">비우기</button>
+          <button class="secondary-action" id="saveInstructionButton" type="button">저장</button>
+        </div>
+      </div>
+    </div>
     <div class="share-dialog" id="shareDialog" role="dialog" aria-modal="true" aria-labelledby="shareDialogTitle" hidden>
       <div class="share-dialog-panel">
         <div class="share-dialog-header">
