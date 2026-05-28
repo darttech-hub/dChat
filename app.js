@@ -707,16 +707,19 @@ function renderMessageActions(message) {
   actions.className = "message-actions";
   const bookmarkLabel = message.bookmarked ? "★" : "☆";
   const bookmarkTitle = message.bookmarked ? "찜 해제" : "찜하기";
-  const bookmarkButton = `<button type="button" class="bookmark-action icon-only${message.bookmarked ? " active" : ""}" data-action="toggle-bookmark" data-message-id="${message.id}" title="${bookmarkTitle}" aria-label="${bookmarkTitle}">${bookmarkLabel}</button>`;
+  const bookmarkButton = `<button type="button" class="bookmark-action icon-only${message.bookmarked ? " active" : ""}" data-action="toggle-bookmark" data-message-id="${message.id}" data-tooltip="${bookmarkTitle}" aria-label="${bookmarkTitle}">${bookmarkLabel}</button>`;
+  const copyButton = createIconActionButton("copy-message", message.id, "복사", "copy");
+  const regenerateButton = createIconActionButton("regenerate-message", message.id, "다시 생성", "refresh");
+  const branchButton = createIconActionButton("branch-message", message.id, "브랜치", "branch");
 
   if (message.role === "model") {
     const showCompressedAction = message.contextText && shouldCompactMessage(message);
     actions.innerHTML = `
       ${bookmarkButton}
-      <button type="button" data-action="copy-message" data-message-id="${message.id}">복사</button>
+      ${copyButton}
       ${showCompressedAction ? `<button type="button" data-action="show-compact" data-message-id="${message.id}">압축본</button>` : ""}
-      <button type="button" data-action="regenerate-message" data-message-id="${message.id}">다시 생성</button>
-      <button type="button" data-action="branch-message" data-message-id="${message.id}">새 방</button>
+      ${regenerateButton}
+      ${branchButton}
     `;
     return actions;
   }
@@ -725,12 +728,49 @@ function renderMessageActions(message) {
     actions.innerHTML = `
       ${bookmarkButton}
       <button type="button" data-action="retry-message" data-message-id="${message.id}">다시 요청</button>
-      <button type="button" data-action="copy-message" data-message-id="${message.id}">복사</button>
+      ${copyButton}
     `;
     return actions;
   }
 
   return null;
+}
+
+function createIconActionButton(action, messageId, label, iconName) {
+  return `
+    <button type="button" class="icon-only" data-action="${action}" data-message-id="${messageId}" data-tooltip="${label}" aria-label="${label}">
+      ${getActionIcon(iconName)}
+    </button>
+  `;
+}
+
+function getActionIcon(iconName) {
+  const icons = {
+    copy: `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <rect x="8" y="8" width="10" height="10" rx="2"></rect>
+        <path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+    `,
+    refresh: `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M20 11a8 8 0 0 0-14.5-4.6"></path>
+        <path d="M5 3v4h4"></path>
+        <path d="M4 13a8 8 0 0 0 14.5 4.6"></path>
+        <path d="M19 21v-4h-4"></path>
+      </svg>
+    `,
+    branch: `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="6" cy="6" r="3"></circle>
+        <circle cx="18" cy="6" r="3"></circle>
+        <circle cx="6" cy="18" r="3"></circle>
+        <path d="M6 9v6"></path>
+        <path d="M9 6h3a6 6 0 0 1 6 6v3"></path>
+      </svg>
+    `
+  };
+  return icons[iconName] || "";
 }
 
 function createBookmarkCard({ room, message }, position, total) {
@@ -1047,16 +1087,20 @@ function addRoom() {
 
 function deleteActiveRoom() {
   if (isBookmarkView()) return;
+  const room = getActiveRoom();
+  const bookmarkCount = collectBookmarkedMessages([room]).length;
+  const bookmarkWarning = bookmarkCount ? `\n\n주의: 이 채팅방에는 찜한 대화 ${bookmarkCount}개가 있습니다. 삭제하면 찜한 대화 목록에서도 함께 사라집니다.` : "";
+
   if (state.rooms.length === 1) {
-    const room = getActiveRoom();
+    const ok = confirm(`"${room.title}" 채팅방의 대화 내용을 모두 삭제할까요?${bookmarkWarning}`);
+    if (!ok) return;
     room.messages = [];
     room.updatedAt = Date.now();
     render();
     return;
   }
 
-  const room = getActiveRoom();
-  const ok = confirm(`"${room.title}" 채팅방을 삭제할까요?`);
+  const ok = confirm(`"${room.title}" 채팅방을 삭제할까요?${bookmarkWarning}`);
   if (!ok) return;
 
   state.rooms = state.rooms.filter((item) => item.id !== room.id);
