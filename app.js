@@ -66,6 +66,10 @@ const THEMES = {
   }
 };
 const DEFAULT_THEME_ID = "clean";
+const VIEW_ROOM = "room";
+const VIEW_BOOKMARKS = "bookmarks";
+const BOOKMARK_MODE_PREVIEW = "preview";
+const BOOKMARK_MODE_FULL = "full";
 
 const els = {
   appShell: document.querySelector("#appShell"),
@@ -86,6 +90,7 @@ const els = {
   composer: document.querySelector("#composer"),
   messageInput: document.querySelector("#messageInput"),
   sendButton: document.querySelector("#sendButton"),
+  scrollMinimap: document.querySelector(".scroll-minimap"),
   scrollMinimapTrack: document.querySelector("#scrollMinimapTrack"),
   scrollMinimapThumb: document.querySelector("#scrollMinimapThumb"),
   apiKeyInput: document.querySelector("#apiKeyInput"),
@@ -152,6 +157,11 @@ let activeDetailText = "";
 let activeDetailSaveHandler = null;
 let activeDetailRegenerateHandler = null;
 
+function normalizeTimestamp(value, fallback = Date.now()) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : fallback;
+}
+
 function createRoom(name = "새 채팅방") {
   const provider = getValidProvider(state?.settings?.defaultProvider);
   return {
@@ -194,7 +204,9 @@ function createDefaultState() {
       themeId: DEFAULT_THEME_ID,
       chatFontSize: 16,
       roomSearch: "",
-      roomSort: "recent"
+      roomSort: "recent",
+      activeView: VIEW_ROOM,
+      bookmarkContentMode: BOOKMARK_MODE_PREVIEW
     },
     rooms: []
   };
@@ -321,6 +333,9 @@ function normalizeState(saved) {
   }
 
   initialState.rooms.forEach((room) => {
+    const roomCreatedAt = normalizeTimestamp(room.createdAt);
+    room.createdAt = roomCreatedAt;
+    room.updatedAt = normalizeTimestamp(room.updatedAt, roomCreatedAt);
     if (typeof room.id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(room.id)) {
       room.id = crypto.randomUUID();
     }
@@ -331,6 +346,15 @@ function normalizeState(saved) {
     room.messages.forEach((message) => {
       if (typeof message.id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(message.id)) {
         message.id = crypto.randomUUID();
+      }
+      message.createdAt = normalizeTimestamp(message.createdAt, roomCreatedAt);
+      message.bookmarked = Boolean(message.bookmarked) && message.role !== "user";
+      if (!message.bookmarked || !Number.isFinite(Number(message.bookmarkOrder))) {
+        delete message.bookmarkOrder;
+      }
+      if (message.role === "model") {
+        message.provider = getValidProvider(message.provider || room.provider);
+        message.model = typeof message.model === "string" && message.model ? message.model : room.model || initialState.settings.defaultModels[message.provider];
       }
       if (typeof message.contextText !== "string") {
         delete message.contextText;
@@ -343,6 +367,7 @@ function normalizeState(saved) {
       initialState.models[room.provider] = normalizeProviderModels(room.provider, [room.model, ...initialState.models[room.provider]]);
     }
   });
+  normalizeBookmarkOrders(initialState.rooms);
 
   initialState.ui = {
     leftCollapsed: Boolean(initialState.ui?.leftCollapsed),
@@ -350,7 +375,9 @@ function normalizeState(saved) {
     themeId: getValidThemeId(initialState.ui?.themeId),
     chatFontSize: clampNumber(Number(initialState.ui?.chatFontSize ?? 16), 14, 22),
     roomSearch: String(initialState.ui?.roomSearch || ""),
-    roomSort: initialState.ui?.roomSort === "name" ? "name" : "recent"
+    roomSort: initialState.ui?.roomSort === "name" ? "name" : "recent",
+    activeView: initialState.ui?.activeView === VIEW_BOOKMARKS ? VIEW_BOOKMARKS : VIEW_ROOM,
+    bookmarkContentMode: initialState.ui?.bookmarkContentMode === BOOKMARK_MODE_FULL ? BOOKMARK_MODE_FULL : BOOKMARK_MODE_PREVIEW
   };
 
   if (!initialState.rooms.some((room) => room.id === initialState.activeRoomId)) {
@@ -374,6 +401,25 @@ function getValidProvider(provider) {
 
 function getProviderLabel(provider) {
   return PROVIDERS[getValidProvider(provider)];
+}
+
+function getMessageProvider(message, room) {
+  return getValidProvider(message.provider || room.provider);
+}
+
+function getMessageModel(message, room) {
+  const provider = getMessageProvider(message, room);
+  return message.model || room.model || getDefaultModel(provider);
+}
+
+function snapshotRoomMessageModelMetadata(room) {
+  const provider = getValidProvider(room.provider);
+  const model = room.model || getDefaultModel(provider);
+  room.messages.forEach((message) => {
+    if (message.role !== "model") return;
+    if (!message.provider) message.provider = provider;
+    if (!message.model) message.model = model;
+  });
 }
 
 function getValidThemeId(themeId) {
@@ -466,6 +512,54 @@ function formatModelLabel(modelName) {
   return modelName.replace(/^models\//, "");
 }
 
+function formatAssistantMessageLabel(message, room) {
+  const provider = getMessageProvider(message, room);
+  const model = getMessageModel(message, room);
+  return model ? `${getProviderLabel(provider)} · ${formatModelLabel(model)}` : getProviderLabel(provider);
+}
+
+function formatVisibleMessageLabel(message, room) {
+  if (message.role === "user") return "You";
+  if (message.role === "error") return "Error";
+  return formatAssistantMessageLabel(message, room);
+}
+
+function padDatePart(value) {
+  return String(value).padStart(2, "0");
+}
+
+function padMillisecondPart(value) {
+  return String(value).padStart(3, "0");
+}
+
+function getMessageDate(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatMessageTimestamp(value) {
+  const date = getMessageDate(value);
+  if (!date) return "";
+
+  const now = new Date();
+  const time = `${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}`;
+  if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate()) {
+    return `오늘 ${time}`;
+  }
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${date.getMonth() + 1}.${date.getDate()} ${time}`;
+  }
+  return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()} ${time}`;
+}
+
+function formatMessageFullTimestamp(value) {
+  const date = getMessageDate(value);
+  if (!date) return "";
+  return `${date.getFullYear()}.${padDatePart(date.getMonth() + 1)}.${padDatePart(date.getDate())} ${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}:${padDatePart(date.getSeconds())}.${padMillisecondPart(date.getMilliseconds())}`;
+}
+
 function renderModelOptions(select, selectedModel, provider) {
   select.innerHTML = "";
   getProviderModels(provider).forEach((model) => {
@@ -488,11 +582,79 @@ function renderThemeOptions() {
   });
 }
 
+function collectBookmarkedMessages(rooms = state.rooms) {
+  return rooms.flatMap((room) =>
+    room.messages
+      .map((message, index) => ({ room, message, index }))
+      .filter(({ message }) => message.bookmarked && message.role !== "user" && !message.pending)
+  );
+}
+
+function normalizeBookmarkOrders(rooms = state.rooms) {
+  const bookmarks = collectBookmarkedMessages(rooms).sort((a, b) => {
+    const aOrder = Number(a.message.bookmarkOrder);
+    const bOrder = Number(b.message.bookmarkOrder);
+    const aHasOrder = Number.isFinite(aOrder);
+    const bHasOrder = Number.isFinite(bOrder);
+    if (aHasOrder && bHasOrder) return aOrder - bOrder || b.message.createdAt - a.message.createdAt;
+    if (aHasOrder) return -1;
+    if (bHasOrder) return 1;
+    return b.message.createdAt - a.message.createdAt;
+  });
+
+  bookmarks.forEach(({ message }, index) => {
+    message.bookmarkOrder = index + 1;
+  });
+}
+
+function getBookmarkedMessages() {
+  normalizeBookmarkOrders();
+  return collectBookmarkedMessages().sort((a, b) => a.message.bookmarkOrder - b.message.bookmarkOrder);
+}
+
+function isBookmarkView() {
+  return state.ui.activeView === VIEW_BOOKMARKS;
+}
+
+function isBookmarkFullMode() {
+  return state.ui.bookmarkContentMode === BOOKMARK_MODE_FULL;
+}
+
+function updateBookmarkContentMode(mode) {
+  state.ui.bookmarkContentMode = mode === BOOKMARK_MODE_FULL ? BOOKMARK_MODE_FULL : BOOKMARK_MODE_PREVIEW;
+  renderMessages();
+  saveState();
+}
+
+function ensureActiveView() {
+  if (isBookmarkView() && getBookmarkedMessages().length === 0) {
+    state.ui.activeView = VIEW_ROOM;
+  }
+}
+
 function renderRooms() {
   const activeRoom = getActiveRoom();
+  const bookmarks = getBookmarkedMessages();
   els.roomList.innerHTML = "";
   els.roomSearchInput.value = state.ui.roomSearch;
   els.roomSortSelect.value = state.ui.roomSort;
+
+  if (bookmarks.length) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `room-item bookmark-room${isBookmarkView() ? " active" : ""}`;
+    button.dataset.view = VIEW_BOOKMARKS;
+    button.innerHTML = `
+      <span class="room-copy">
+        <span class="room-name"></span>
+        <span class="room-subtitle"></span>
+      </span>
+      <span class="room-count bookmark-count">${bookmarks.length}</span>
+    `;
+    button.querySelector(".room-name").textContent = `찜한 대화 ${bookmarks.length}개`;
+    button.querySelector(".room-subtitle").textContent = "중요 표시한 대화 모음";
+    els.roomList.append(button);
+  }
 
   [...state.rooms]
     .filter((room) => {
@@ -510,7 +672,7 @@ function renderRooms() {
     .forEach((room) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `room-item${room.id === activeRoom.id ? " active" : ""}`;
+      button.className = `room-item${!isBookmarkView() && room.id === activeRoom.id ? " active" : ""}`;
       button.dataset.roomId = room.id;
 
       const lastMessage = room.messages.at(-1)?.text || "새 대화";
@@ -540,12 +702,17 @@ function renderRooms() {
 
 function renderMessageActions(message) {
   if (message.pending) return null;
+  if (message.role === "user") return null;
   const actions = document.createElement("div");
   actions.className = "message-actions";
+  const bookmarkLabel = message.bookmarked ? "★" : "☆";
+  const bookmarkTitle = message.bookmarked ? "찜 해제" : "찜하기";
+  const bookmarkButton = `<button type="button" class="bookmark-action icon-only${message.bookmarked ? " active" : ""}" data-action="toggle-bookmark" data-message-id="${message.id}" title="${bookmarkTitle}" aria-label="${bookmarkTitle}">${bookmarkLabel}</button>`;
 
   if (message.role === "model") {
     const showCompressedAction = message.contextText && shouldCompactMessage(message);
     actions.innerHTML = `
+      ${bookmarkButton}
       <button type="button" data-action="copy-message" data-message-id="${message.id}">복사</button>
       ${showCompressedAction ? `<button type="button" data-action="show-compact" data-message-id="${message.id}">압축본</button>` : ""}
       <button type="button" data-action="regenerate-message" data-message-id="${message.id}">다시 생성</button>
@@ -556,6 +723,7 @@ function renderMessageActions(message) {
 
   if (message.role === "error") {
     actions.innerHTML = `
+      ${bookmarkButton}
       <button type="button" data-action="retry-message" data-message-id="${message.id}">다시 요청</button>
       <button type="button" data-action="copy-message" data-message-id="${message.id}">복사</button>
     `;
@@ -565,7 +733,136 @@ function renderMessageActions(message) {
   return null;
 }
 
+function createBookmarkCard({ room, message }, position, total) {
+  const fullMode = isBookmarkFullMode();
+  const showMoveButtons = total > 1;
+  const card = document.createElement("article");
+  card.className = `bookmark-card ${message.role} ${fullMode ? "full" : "preview"}`;
+  card.dataset.roomId = room.id;
+  card.dataset.messageId = message.id;
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+  card.setAttribute("aria-label", `${room.title}의 찜한 대화로 이동`);
+
+  const copy = document.createElement("div");
+  copy.className = "bookmark-card-copy";
+
+  const meta = document.createElement("div");
+  meta.className = "bookmark-card-meta";
+
+  const roomName = document.createElement("span");
+  roomName.className = "bookmark-card-room";
+  roomName.textContent = room.title;
+
+  const role = document.createElement("span");
+  role.textContent = formatMessageRole(message, room);
+
+  const time = document.createElement("time");
+  time.dateTime = new Date(message.createdAt).toISOString();
+  time.title = formatMessageFullTimestamp(message.createdAt);
+  time.textContent = formatMessageTimestamp(message.createdAt);
+
+  meta.append(roomName, role, time);
+
+  const text = document.createElement(fullMode && message.role === "model" ? "div" : "p");
+  text.className = `bookmark-card-text${fullMode && message.role === "model" ? " markdown-body" : ""}`;
+  if (fullMode && message.role === "model") {
+    text.innerHTML = renderMarkdown(message.text);
+  } else {
+    text.textContent = fullMode ? message.text : clipText(normalizeWhitespace(message.text), 220);
+  }
+
+  copy.append(meta, text);
+
+  const controls = document.createElement("div");
+  controls.className = "bookmark-card-actions";
+
+  if (showMoveButtons) {
+    const upButton = document.createElement("button");
+    upButton.type = "button";
+    upButton.className = "bookmark-order-button";
+    upButton.dataset.action = "move-bookmark-up";
+    upButton.dataset.roomId = room.id;
+    upButton.dataset.messageId = message.id;
+    upButton.disabled = position === 0;
+    upButton.title = "위로 이동";
+    upButton.setAttribute("aria-label", "위로 이동");
+    upButton.textContent = "↑";
+    controls.append(upButton);
+
+    const downButton = document.createElement("button");
+    downButton.type = "button";
+    downButton.className = "bookmark-order-button";
+    downButton.dataset.action = "move-bookmark-down";
+    downButton.dataset.roomId = room.id;
+    downButton.dataset.messageId = message.id;
+    downButton.disabled = position === total - 1;
+    downButton.title = "아래로 이동";
+    downButton.setAttribute("aria-label", "아래로 이동");
+    downButton.textContent = "↓";
+    controls.append(downButton);
+  }
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "bookmark-remove-button";
+  removeButton.dataset.action = "toggle-bookmark";
+  removeButton.dataset.roomId = room.id;
+  removeButton.dataset.messageId = message.id;
+  removeButton.title = "찜 해제";
+  removeButton.setAttribute("aria-label", "찜 해제");
+  removeButton.textContent = "★";
+  controls.append(removeButton);
+
+  card.append(copy, controls);
+  return card;
+}
+
+function renderBookmarkedMessages() {
+  const bookmarks = getBookmarkedMessages();
+  els.messageStream.innerHTML = "";
+  renderScrollMinimap();
+
+  if (!bookmarks.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.innerHTML = `
+      <h2>찜한 대화가 없습니다</h2>
+      <p>중요한 메시지의 ☆ 찜 버튼을 눌러 모아둘 수 있습니다.</p>
+    `;
+    els.messageStream.append(empty);
+    return;
+  }
+
+  const board = document.createElement("section");
+  board.className = "bookmark-board";
+  board.setAttribute("aria-label", "찜한 대화 모음");
+
+  const header = document.createElement("div");
+  header.className = "bookmark-board-header";
+  const mode = isBookmarkFullMode() ? BOOKMARK_MODE_FULL : BOOKMARK_MODE_PREVIEW;
+  header.innerHTML = `
+    <p>항목을 클릭하면 원래 채팅방의 해당 메시지 위치로 이동합니다.</p>
+    <div class="bookmark-mode-toggle" role="group" aria-label="찜한 대화 표시 방식">
+      <button type="button" data-bookmark-mode="${BOOKMARK_MODE_PREVIEW}" class="${mode === BOOKMARK_MODE_PREVIEW ? "active" : ""}" aria-pressed="${mode === BOOKMARK_MODE_PREVIEW}">미리보기</button>
+      <button type="button" data-bookmark-mode="${BOOKMARK_MODE_FULL}" class="${mode === BOOKMARK_MODE_FULL ? "active" : ""}" aria-pressed="${mode === BOOKMARK_MODE_FULL}">전체내용</button>
+    </div>
+  `;
+
+  const list = document.createElement("div");
+  list.className = "bookmark-list";
+  bookmarks.forEach((bookmark, index) => list.append(createBookmarkCard(bookmark, index, bookmarks.length)));
+
+  board.append(header, list);
+  els.messageStream.append(board);
+}
+
 function renderMessages() {
+  if (isBookmarkView()) {
+    renderBookmarkedMessages();
+    return;
+  }
+
   const room = getActiveRoom();
   els.messageStream.innerHTML = "";
 
@@ -590,8 +887,17 @@ function renderMessages() {
     const label = document.createElement("div");
     label.className = "message-label";
     const labelText = document.createElement("span");
-    labelText.textContent = message.role === "user" ? "You" : message.role === "error" ? "Error" : getProviderLabel(room.provider);
+    labelText.textContent = formatVisibleMessageLabel(message, room);
     label.append(labelText);
+    const timestampText = formatMessageTimestamp(message.createdAt);
+    if (timestampText) {
+      const time = document.createElement("time");
+      time.className = "message-time";
+      time.dateTime = new Date(message.createdAt).toISOString();
+      time.title = formatMessageFullTimestamp(message.createdAt);
+      time.textContent = timestampText;
+      label.append(time);
+    }
 
     if (message.role === "model" && message.contextText && shouldCompactMessage(message)) {
       const compactBadge = document.createElement("button");
@@ -625,6 +931,26 @@ function renderMessages() {
 
 function renderHeader() {
   const room = getActiveRoom();
+  const headerActionButtons = [els.editRoomTitleButton, els.openInstructionButton, els.shareRoomButton, els.deleteRoomButton];
+  if (isBookmarkView()) {
+    const count = getBookmarkedMessages().length;
+    els.roomTitleInput.value = "찜한 대화";
+    els.roomTitleInput.disabled = true;
+    els.roomMeta.textContent = `${count}개 저장됨 · 클릭하면 원래 위치로 이동`;
+    headerActionButtons.forEach((button) => {
+      button.hidden = true;
+      button.disabled = true;
+      button.setAttribute("aria-hidden", "true");
+    });
+    return;
+  }
+
+  els.roomTitleInput.disabled = false;
+  headerActionButtons.forEach((button) => {
+    button.hidden = false;
+    button.disabled = false;
+    button.removeAttribute("aria-hidden");
+  });
   els.roomTitleInput.value = room.title;
   const userCount = room.messages.filter((message) => message.role === "user").length;
   const instructionMeta = getRoomInstruction(room) ? " · 지침 있음" : "";
@@ -662,10 +988,22 @@ function renderSettings() {
 }
 
 function renderUiState() {
+  const bookmarkView = isBookmarkView();
   els.appShell.classList.toggle("left-collapsed", state.ui.leftCollapsed);
   els.appShell.classList.toggle("right-collapsed", state.ui.rightCollapsed);
+  els.appShell.classList.toggle("bookmark-view", bookmarkView);
   document.body.dataset.theme = state.ui.themeId;
   els.appShell.style.setProperty("--chat-font-size", `${state.ui.chatFontSize}px`);
+  els.composer.hidden = bookmarkView;
+  els.composer.toggleAttribute("inert", bookmarkView);
+  els.composer.setAttribute("aria-hidden", String(bookmarkView));
+  els.messageInput.disabled = bookmarkView;
+  els.messageInput.placeholder = bookmarkView ? "찜한 대화 화면에서는 메시지를 입력할 수 없습니다" : "메시지를 입력하세요";
+  els.scrollMinimap.hidden = bookmarkView;
+  if (bookmarkView && document.activeElement === els.messageInput) {
+    els.messageInput.blur();
+  }
+  renderSendButtonState();
 
   const leftLabel = state.ui.leftCollapsed ? "왼쪽 패널 펼치기" : "왼쪽 패널 접기";
   const rightLabel = state.ui.rightCollapsed ? "오른쪽 패널 펼치기" : "오른쪽 패널 접기";
@@ -678,6 +1016,7 @@ function renderUiState() {
 }
 
 function render() {
+  ensureActiveView();
   renderUiState();
   renderRooms();
   renderHeader();
@@ -688,6 +1027,7 @@ function render() {
 
 function switchRoom(roomId) {
   state.activeRoomId = roomId;
+  state.ui.activeView = VIEW_ROOM;
   clearComposerInput();
   closeMobilePanels();
   render();
@@ -698,6 +1038,7 @@ function addRoom() {
   const room = createRoom(`채팅방 ${state.rooms.length + 1}`);
   state.rooms.push(room);
   state.activeRoomId = room.id;
+  state.ui.activeView = VIEW_ROOM;
   clearComposerInput();
   render();
   els.roomTitleInput.focus();
@@ -705,6 +1046,7 @@ function addRoom() {
 }
 
 function deleteActiveRoom() {
+  if (isBookmarkView()) return;
   if (state.rooms.length === 1) {
     const room = getActiveRoom();
     room.messages = [];
@@ -723,6 +1065,7 @@ function deleteActiveRoom() {
 }
 
 function updateRoomTitle(title) {
+  if (isBookmarkView()) return;
   const room = getActiveRoom();
   room.title = title.trim() || "이름 없는 채팅방";
   room.updatedAt = Date.now();
@@ -740,6 +1083,7 @@ function toggleRoomPinned(roomId) {
 }
 
 function focusRoomTitle() {
+  if (isBookmarkView()) return;
   els.roomTitleInput.focus();
   els.roomTitleInput.select();
 }
@@ -749,6 +1093,7 @@ function getRoomInstruction(room) {
 }
 
 function openInstructionDialog() {
+  if (isBookmarkView()) return;
   const room = getActiveRoom();
   els.instructionTextInput.value = room.instruction || "";
   els.instructionDialog.hidden = false;
@@ -781,6 +1126,7 @@ function clearRoomInstruction() {
 
 function updateRoomModel(model) {
   const room = getActiveRoom();
+  snapshotRoomMessageModelMetadata(room);
   room.model = model;
   room.updatedAt = Date.now();
   render();
@@ -789,6 +1135,7 @@ function updateRoomModel(model) {
 
 function updateRoomProvider(provider) {
   const room = getActiveRoom();
+  snapshotRoomMessageModelMetadata(room);
   room.provider = getValidProvider(provider);
   room.model = getDefaultModel(room.provider);
   room.updatedAt = Date.now();
@@ -854,10 +1201,18 @@ function updateTheme(themeId) {
   setStatus(`${getTheme(validThemeId).name} 테마를 적용했습니다.`, "success");
 }
 
-function formatMessageRole(role, provider) {
-  if (role === "user") return "나";
-  if (role === "error") return "오류";
-  return getProviderLabel(provider);
+function openBookmarksView() {
+  if (!getBookmarkedMessages().length) return;
+  state.ui.activeView = VIEW_BOOKMARKS;
+  closeMobilePanels();
+  render();
+  els.messageStream.scrollTop = 0;
+}
+
+function formatMessageRole(message, room) {
+  if (message.role === "user") return "나";
+  if (message.role === "error") return "오류";
+  return formatAssistantMessageLabel(message, room);
 }
 
 function buildShareText(room) {
@@ -868,7 +1223,7 @@ function buildShareText(room) {
     room.title,
     `모델: ${getProviderLabel(room.provider)} / ${formatModelLabel(room.model)}`,
     "",
-    ...messages.flatMap((message) => [`[${formatMessageRole(message.role, room.provider)}]`, message.text.trim(), ""])
+    ...messages.flatMap((message) => [`[${formatMessageRole(message, room)}]`, message.text.trim(), ""])
   ];
 
   return lines.join("\n").trim();
@@ -1016,6 +1371,7 @@ function regenerateDetailDialogText() {
 }
 
 async function shareActiveRoom() {
+  if (isBookmarkView()) return;
   const room = getActiveRoom();
   const text = buildShareText(room);
 
@@ -1051,8 +1407,8 @@ async function shareActiveRoom() {
   }
 }
 
-function findMessageById(messageId) {
-  const room = getActiveRoom();
+function findMessageById(messageId, roomId = state.activeRoomId) {
+  const room = state.rooms.find((item) => item.id === roomId) || getActiveRoom();
   const index = room.messages.findIndex((message) => message.id === messageId);
   return { room, index, message: index >= 0 ? room.messages[index] : null };
 }
@@ -1075,7 +1431,11 @@ async function retryFromMessage(messageId) {
   }
 
   room.messages = room.messages.slice(0, index);
-  const pending = createMessage("model", "응답을 기다리는 중입니다.", { pending: true });
+  const pending = createMessage("model", "응답을 기다리는 중입니다.", {
+    pending: true,
+    provider: room.provider,
+    model: room.model
+  });
   room.messages.push(pending);
   room.updatedAt = Date.now();
   render();
@@ -1093,7 +1453,11 @@ async function regenerateMessage(messageId) {
   }
 
   room.messages = room.messages.slice(0, index);
-  const pending = createMessage("model", "응답을 다시 생성하는 중입니다.", { pending: true });
+  const pending = createMessage("model", "응답을 다시 생성하는 중입니다.", {
+    pending: true,
+    provider: room.provider,
+    model: room.model
+  });
   room.messages.push(pending);
   room.updatedAt = Date.now();
   render();
@@ -1108,7 +1472,7 @@ function branchFromMessage(messageId) {
     provider: room.provider,
     model: room.model,
     instruction: room.instruction || "",
-    messages: room.messages.slice(0, index + 1).map((item) => ({ ...item, id: crypto.randomUUID() })),
+    messages: room.messages.slice(0, index + 1).map((item) => ({ ...item, id: crypto.randomUUID(), bookmarked: false })),
     pinned: false,
     createdAt: Date.now(),
     updatedAt: Date.now()
@@ -1119,9 +1483,72 @@ function branchFromMessage(messageId) {
   setStatus("선택한 응답까지 새 채팅방으로 복사했습니다.", "success");
 }
 
-async function handleMessageAction(action, messageId) {
-  const { message } = findMessageById(messageId);
+function toggleMessageBookmark(messageId, roomId) {
+  const { room, message } = findMessageById(messageId, roomId);
+  if (!message || message.pending) return;
+  if (message.role === "user") {
+    setStatus("내가 작성한 메시지는 찜 대상에서 제외했습니다.");
+    return;
+  }
+
+  message.bookmarked = !message.bookmarked;
+  if (message.bookmarked) {
+    normalizeBookmarkOrders();
+    const firstOrder = getBookmarkedMessages()[0]?.message.bookmarkOrder || 1;
+    message.bookmarkOrder = firstOrder - 1;
+    normalizeBookmarkOrders();
+  } else {
+    delete message.bookmarkOrder;
+    normalizeBookmarkOrders();
+  }
+  room.updatedAt = Date.now();
+  const bookmarked = message.bookmarked;
+  const wasBookmarkView = isBookmarkView();
+  if (!bookmarked && isBookmarkView() && getBookmarkedMessages().length === 0) {
+    state.ui.activeView = VIEW_ROOM;
+  }
+  render();
+  if (!wasBookmarkView) {
+    requestAnimationFrame(() => {
+      scrollToMessage(messageId);
+      highlightMessage(messageId);
+    });
+  }
+  setStatus(bookmarked ? "대화를 찜했습니다." : "찜을 해제했습니다.", "success");
+}
+
+function moveBookmarkedMessage(messageId, roomId, direction) {
+  normalizeBookmarkOrders();
+  const bookmarks = getBookmarkedMessages();
+  const index = bookmarks.findIndex(({ room, message }) => room.id === roomId && message.id === messageId);
+  if (index < 0) return;
+
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= bookmarks.length) return;
+
+  const current = bookmarks[index].message;
+  const target = bookmarks[targetIndex].message;
+  const currentOrder = current.bookmarkOrder;
+  current.bookmarkOrder = target.bookmarkOrder;
+  target.bookmarkOrder = currentOrder;
+  renderMessages();
+  saveState();
+  setStatus("찜한 대화 순서를 변경했습니다.", "success");
+}
+
+async function handleMessageAction(action, messageId, roomId) {
+  const { message } = findMessageById(messageId, roomId);
   if (!message) return;
+
+  if (action === "move-bookmark-up" || action === "move-bookmark-down") {
+    moveBookmarkedMessage(messageId, roomId, action === "move-bookmark-up" ? "up" : "down");
+    return;
+  }
+
+  if (action === "toggle-bookmark") {
+    toggleMessageBookmark(messageId, roomId);
+    return;
+  }
 
   if (action === "copy-message") {
     try {
@@ -1257,6 +1684,7 @@ async function loadModels() {
     }
     state.rooms.forEach((room) => {
       if (room.provider === provider && !state.models[provider].includes(room.model)) {
+        snapshotRoomMessageModelMetadata(room);
         room.model = getDefaultModel(provider);
       }
     });
@@ -1835,6 +2263,12 @@ function requestModelResponse(room, key, messages, signal) {
 async function sendMessage(event) {
   event.preventDefault();
 
+  if (isBookmarkView()) {
+    clearComposerInput();
+    setStatus("찜한 대화 화면에서는 메시지를 보낼 수 없습니다.");
+    return;
+  }
+
   if (activeRequest) {
     abortActiveRequest();
     return;
@@ -1862,7 +2296,11 @@ async function sendMessage(event) {
 
   persistApiKeys();
   room.messages.push(createMessage("user", text));
-  const pending = createMessage("model", "응답을 기다리는 중입니다.", { pending: true });
+  const pending = createMessage("model", "응답을 기다리는 중입니다.", {
+    pending: true,
+    provider,
+    model: room.model
+  });
   room.messages.push(pending);
   room.updatedAt = Date.now();
   clearComposerInput();
@@ -1872,6 +2310,12 @@ async function sendMessage(event) {
 
 async function processRoomRequest(room, pendingId) {
   const provider = getValidProvider(room.provider);
+  const requestRoom = {
+    ...room,
+    provider,
+    model: room.model,
+    instruction: room.instruction || ""
+  };
   const key = getApiKey(provider);
   if (!key) {
     const pending = room.messages.find((message) => message.id === pendingId);
@@ -1886,14 +2330,18 @@ async function processRoomRequest(room, pendingId) {
   }
 
   const requestMessages = getRequestMessages(room);
-  const requestStats = getRequestPayloadStats(provider, room, requestMessages);
+  const requestStats = getRequestPayloadStats(provider, requestRoom, requestMessages);
   const controller = new AbortController();
   activeRequest = { controller, roomId: room.id, pendingId };
   renderSendButtonState();
-  setStatus(`${getProviderLabel(provider)} ${formatModelLabel(room.model)} 응답 생성 중입니다. 전송 ${requestStats.size}.`);
+  setStatus(`${getProviderLabel(provider)} ${formatModelLabel(requestRoom.model)} 응답 생성 중입니다. 전송 ${requestStats.size}.`);
 
   try {
     const pending = room.messages.find((message) => message.id === pendingId);
+    if (pending) {
+      pending.provider = provider;
+      pending.model = requestRoom.model;
+    }
     let data = null;
 
     for (let retryIndex = 0; retryIndex <= HIGH_DEMAND_RETRY_DELAYS_MS.length; retryIndex += 1) {
@@ -1902,7 +2350,7 @@ async function processRoomRequest(room, pendingId) {
           pending.text = `다시 요청합니다.\n${getProviderLabel(provider)}에 재요청 중입니다.`;
           renderMessages();
         }
-        data = await requestModelResponse(room, key, requestMessages, controller.signal);
+        data = await requestModelResponse(requestRoom, key, requestMessages, controller.signal);
         break;
       } catch (error) {
         const canRetry = retryIndex < HIGH_DEMAND_RETRY_DELAYS_MS.length && isHighDemandError(error);
@@ -1920,6 +2368,7 @@ async function processRoomRequest(room, pendingId) {
 
     if (pending) {
       pending.pending = false;
+      pending.createdAt = Date.now();
       pending.text = extractResponseText(provider, data);
       const compressed = applyCompressedContextText(pending);
       if (compressed) {
@@ -1933,6 +2382,7 @@ async function processRoomRequest(room, pendingId) {
     if (pending) {
       pending.role = "error";
       pending.pending = false;
+      pending.createdAt = Date.now();
       pending.text = error.name === "AbortError" ? "요청이 취소되었습니다." : error.message;
     }
     setStatus(error.name === "AbortError" ? "요청이 취소되었습니다." : error.message, "error");
@@ -1951,6 +2401,14 @@ function abortActiveRequest() {
 
 function renderSendButtonState() {
   const icon = els.sendButton.querySelector("span");
+  if (isBookmarkView()) {
+    els.sendButton.disabled = true;
+    els.sendButton.setAttribute("aria-label", "찜한 대화에서는 전송 불가");
+    els.sendButton.title = "찜한 대화에서는 전송할 수 없습니다";
+    icon.textContent = "↑";
+    return;
+  }
+
   if (activeRequest) {
     els.sendButton.disabled = false;
     els.sendButton.setAttribute("aria-label", "요청 중지");
@@ -1988,8 +2446,13 @@ function scrollMessagesToBottom() {
 }
 
 function renderScrollMinimap() {
-  const room = getActiveRoom();
   els.scrollMinimapTrack.innerHTML = "";
+  if (isBookmarkView()) {
+    updateScrollMinimapThumb();
+    return;
+  }
+
+  const room = getActiveRoom();
 
   const messages = room.messages;
   if (!messages.length) {
@@ -2030,6 +2493,35 @@ function scrollToMessage(messageId) {
   const target = els.messageStream.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
   if (!target) return;
   target.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function highlightMessage(messageId) {
+  const target = els.messageStream.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+  if (!target) return;
+  target.classList.remove("message-highlight");
+  void target.offsetWidth;
+  target.classList.add("message-highlight");
+  window.setTimeout(() => {
+    target.classList.remove("message-highlight");
+  }, 1700);
+}
+
+function goToBookmarkedMessage(roomId, messageId) {
+  const { message } = findMessageById(messageId, roomId);
+  if (!message) {
+    setStatus("원본 대화를 찾지 못했습니다.", "error");
+    render();
+    return;
+  }
+
+  state.activeRoomId = roomId;
+  state.ui.activeView = VIEW_ROOM;
+  closeMobilePanels();
+  render();
+  requestAnimationFrame(() => {
+    scrollToMessage(messageId);
+    highlightMessage(messageId);
+  });
 }
 
 function toggleLeftPanel() {
@@ -2101,9 +2593,30 @@ els.saveInstructionButton.addEventListener("click", saveRoomInstruction);
 els.clearInstructionButton.addEventListener("click", clearRoomInstruction);
 
 els.messageStream.addEventListener("click", async (event) => {
+  const bookmarkModeButton = event.target.closest("[data-bookmark-mode]");
+  if (bookmarkModeButton) {
+    updateBookmarkContentMode(bookmarkModeButton.dataset.bookmarkMode);
+    return;
+  }
+
   const actionButton = event.target.closest("[data-action]");
-  if (!actionButton) return;
-  await handleMessageAction(actionButton.dataset.action, actionButton.dataset.messageId);
+  if (actionButton) {
+    await handleMessageAction(actionButton.dataset.action, actionButton.dataset.messageId, actionButton.dataset.roomId);
+    return;
+  }
+
+  const bookmarkCard = event.target.closest(".bookmark-card");
+  if (bookmarkCard) {
+    goToBookmarkedMessage(bookmarkCard.dataset.roomId, bookmarkCard.dataset.messageId);
+  }
+});
+
+els.messageStream.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const bookmarkCard = event.target.closest(".bookmark-card");
+  if (!bookmarkCard) return;
+  event.preventDefault();
+  goToBookmarkedMessage(bookmarkCard.dataset.roomId, bookmarkCard.dataset.messageId);
 });
 
 els.scrollMinimapTrack.addEventListener("click", (event) => {
@@ -2122,6 +2635,12 @@ els.scrollMinimapTrack.addEventListener("click", (event) => {
 els.messageStream.addEventListener("scroll", updateScrollMinimapThumb);
 
 els.roomList.addEventListener("click", (event) => {
+  const bookmarkRoom = event.target.closest("[data-view='bookmarks']");
+  if (bookmarkRoom) {
+    openBookmarksView();
+    return;
+  }
+
   const pinButton = event.target.closest(".room-pin");
   if (pinButton) {
     event.preventDefault();
