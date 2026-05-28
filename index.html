@@ -4,13 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>dChat</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
       <aside class="sidebar" aria-label="채팅방 목록">
         <div class="brand-row">
-          <div class="brand-mark" aria-hidden="true">d</div>
+          <img class="brand-mark" src="./favicon.svg" alt="" aria-hidden="true" />
           <div class="brand-copy">
             <h1>dChat</h1>
             <p>Gemini & Groq</p>
@@ -24,6 +25,14 @@
           <span aria-hidden="true">+</span>
           새 채팅방
         </button>
+
+        <div class="room-controls">
+          <input id="roomSearchInput" type="text" placeholder="채팅방 검색" aria-label="채팅방 검색" />
+          <select id="roomSortSelect" aria-label="채팅방 정렬">
+            <option value="recent">최근순</option>
+            <option value="name">이름순</option>
+          </select>
+        </div>
 
         <div class="room-list" id="roomList" role="list"></div>
       </aside>
@@ -60,7 +69,13 @@
           </div>
         </section>
 
-        <section class="message-stream" id="messageStream" aria-live="polite"></section>
+        <div class="message-area">
+          <section class="message-stream" id="messageStream" aria-live="polite"></section>
+          <aside class="scroll-minimap" aria-label="대화 미니맵">
+            <div class="scroll-minimap-track" id="scrollMinimapTrack"></div>
+            <div class="scroll-minimap-thumb" id="scrollMinimapThumb"></div>
+          </aside>
+        </div>
 
         <form class="composer" id="composer">
           <textarea id="messageInput" rows="1" placeholder="메시지를 입력하세요" aria-label="메시지"></textarea>
@@ -92,6 +107,10 @@
             <input id="rememberKeyInput" type="checkbox" />
             Gemini 키 저장
           </label>
+          <div class="key-status-row">
+            <span id="geminiKeyStatus">저장 안 됨</span>
+            <button class="ghost-button compact-button" id="clearGeminiKeyButton" type="button">삭제</button>
+          </div>
           <label class="field-label" for="groqApiKeyInput">Groq API key</label>
           <div class="secret-row">
             <input id="groqApiKeyInput" type="password" autocomplete="off" placeholder="gsk_..." />
@@ -101,6 +120,10 @@
             <input id="rememberGroqKeyInput" type="checkbox" />
             Groq 키 저장
           </label>
+          <div class="key-status-row">
+            <span id="groqKeyStatus">저장 안 됨</span>
+            <button class="ghost-button compact-button" id="clearGroqKeyButton" type="button">삭제</button>
+          </div>
         </div>
 
         <div class="panel-section">
@@ -120,10 +143,11 @@
           </select>
           <label class="field-label" for="defaultModelSelect">새 채팅방 기본 모델</label>
           <select id="defaultModelSelect"></select>
+          <p class="policy-meter" id="modelPolicyText">지침/맥락 정책을 계산하는 중입니다.</p>
         </div>
 
         <div class="panel-section">
-          <h2>Options</h2>
+          <h2>Context</h2>
           <label class="field-label" for="temperatureInput">Temperature <span id="temperatureValue">0.7</span></label>
           <input id="temperatureInput" type="range" min="0" max="1" step="0.1" value="0.7" />
           <label class="field-label" for="maxTokensInput">Max output tokens</label>
@@ -142,7 +166,16 @@
           <input id="compactThresholdInput" type="number" min="500" max="50000" step="500" value="2000" />
           <label class="field-label" for="compactLengthInput">압축 길이 <span id="compactLengthValue">600자</span></label>
           <input id="compactLengthInput" type="number" min="100" max="4000" step="100" value="600" />
-          <p class="context-meter" id="contextSizeText">전송 예상: 0개 메시지 · 0 B</p>
+          <div class="context-summary-row">
+            <p class="context-meter" id="contextSizeText">전송 예상: 0개 메시지 · 0 B</p>
+            <button class="ghost-button" id="openPayloadPreviewButton" type="button">보기</button>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <h2>View</h2>
+          <label class="field-label" for="themeSelect">테마</label>
+          <select id="themeSelect" aria-label="테마 선택"></select>
           <label class="field-label" for="chatFontSizeInput">대화 글씨 크기 <span id="chatFontSizeValue">16px</span></label>
           <input id="chatFontSizeInput" type="range" min="14" max="22" step="1" value="16" />
         </div>
@@ -150,11 +183,41 @@
         <div class="panel-section status-section">
           <h2>Status</h2>
           <p id="statusText">API 키를 입력하면 대화를 시작할 수 있습니다.</p>
+          <div class="status-actions">
+            <a
+              class="ghost-button guide-link"
+              href="https://github.com/darttech-hub/dChat/blob/main/README.md"
+              target="_blank"
+              rel="noreferrer"
+            >
+              사용 가이드
+            </a>
+            <button class="ghost-button" id="openStoragePolicyButton" type="button">저장 정책</button>
+          </div>
         </div>
       </aside>
     </div>
 
     <div class="overlay" id="overlay" hidden></div>
+    <div class="share-dialog" id="detailDialog" role="dialog" aria-modal="true" aria-labelledby="detailDialogTitle" hidden>
+      <div class="share-dialog-panel">
+        <div class="share-dialog-header">
+          <div>
+            <h2 id="detailDialogTitle">상세 내용</h2>
+            <p id="detailDialogDescription">내용을 확인하세요.</p>
+          </div>
+          <button class="icon-button" id="closeDetailDialogButton" type="button" aria-label="상세 창 닫기">
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+        <textarea id="detailTextOutput" readonly aria-label="상세 내용"></textarea>
+        <div class="share-dialog-actions">
+          <button class="ghost-button" id="regenerateDetailTextButton" type="button" hidden>다시 압축</button>
+          <button class="ghost-button" id="saveDetailTextButton" type="button" hidden>저장</button>
+          <button class="secondary-action" id="copyDetailTextButton" type="button">복사</button>
+        </div>
+      </div>
+    </div>
     <div class="share-dialog" id="instructionDialog" role="dialog" aria-modal="true" aria-labelledby="instructionDialogTitle" hidden>
       <div class="share-dialog-panel">
         <div class="share-dialog-header">

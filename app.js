@@ -39,10 +39,39 @@ const DEFAULT_MODELS_BY_PROVIDER = {
   gemini: DEFAULT_GEMINI_MODELS,
   groq: DEFAULT_GROQ_MODELS
 };
+const THEMES = {
+  clean: {
+    name: "클린",
+    chatFontSize: 16
+  },
+  dawn: {
+    name: "웜 던",
+    chatFontSize: 16
+  },
+  forest: {
+    name: "포레스트",
+    chatFontSize: 17
+  },
+  ink: {
+    name: "잉크",
+    chatFontSize: 15
+  },
+  terminal: {
+    name: "터미널",
+    chatFontSize: 17
+  },
+  paper: {
+    name: "페이퍼",
+    chatFontSize: 16
+  }
+};
+const DEFAULT_THEME_ID = "clean";
 
 const els = {
   appShell: document.querySelector("#appShell"),
   roomList: document.querySelector("#roomList"),
+  roomSearchInput: document.querySelector("#roomSearchInput"),
+  roomSortSelect: document.querySelector("#roomSortSelect"),
   newRoomButton: document.querySelector("#newRoomButton"),
   toggleSidebarButton: document.querySelector("#toggleSidebarButton"),
   toggleSettingsPanelButton: document.querySelector("#toggleSettingsPanelButton"),
@@ -57,12 +86,18 @@ const els = {
   composer: document.querySelector("#composer"),
   messageInput: document.querySelector("#messageInput"),
   sendButton: document.querySelector("#sendButton"),
+  scrollMinimapTrack: document.querySelector("#scrollMinimapTrack"),
+  scrollMinimapThumb: document.querySelector("#scrollMinimapThumb"),
   apiKeyInput: document.querySelector("#apiKeyInput"),
   groqApiKeyInput: document.querySelector("#groqApiKeyInput"),
   toggleKeyButton: document.querySelector("#toggleKeyButton"),
   toggleGroqKeyButton: document.querySelector("#toggleGroqKeyButton"),
   rememberKeyInput: document.querySelector("#rememberKeyInput"),
   rememberGroqKeyInput: document.querySelector("#rememberGroqKeyInput"),
+  geminiKeyStatus: document.querySelector("#geminiKeyStatus"),
+  groqKeyStatus: document.querySelector("#groqKeyStatus"),
+  clearGeminiKeyButton: document.querySelector("#clearGeminiKeyButton"),
+  clearGroqKeyButton: document.querySelector("#clearGroqKeyButton"),
   loadModelsButton: document.querySelector("#loadModelsButton"),
   roomProviderSelect: document.querySelector("#roomProviderSelect"),
   defaultModelSelect: document.querySelector("#defaultModelSelect"),
@@ -79,11 +114,23 @@ const els = {
   compactLengthInput: document.querySelector("#compactLengthInput"),
   compactLengthValue: document.querySelector("#compactLengthValue"),
   contextSizeText: document.querySelector("#contextSizeText"),
+  modelPolicyText: document.querySelector("#modelPolicyText"),
+  openPayloadPreviewButton: document.querySelector("#openPayloadPreviewButton"),
+  themeSelect: document.querySelector("#themeSelect"),
   chatFontSizeInput: document.querySelector("#chatFontSizeInput"),
   chatFontSizeValue: document.querySelector("#chatFontSizeValue"),
   statusText: document.querySelector("#statusText"),
+  openStoragePolicyButton: document.querySelector("#openStoragePolicyButton"),
   openRoomsButton: document.querySelector("#openRoomsButton"),
   openSettingsButton: document.querySelector("#openSettingsButton"),
+  detailDialog: document.querySelector("#detailDialog"),
+  detailDialogTitle: document.querySelector("#detailDialogTitle"),
+  detailDialogDescription: document.querySelector("#detailDialogDescription"),
+  detailTextOutput: document.querySelector("#detailTextOutput"),
+  closeDetailDialogButton: document.querySelector("#closeDetailDialogButton"),
+  copyDetailTextButton: document.querySelector("#copyDetailTextButton"),
+  saveDetailTextButton: document.querySelector("#saveDetailTextButton"),
+  regenerateDetailTextButton: document.querySelector("#regenerateDetailTextButton"),
   instructionDialog: document.querySelector("#instructionDialog"),
   instructionTextInput: document.querySelector("#instructionTextInput"),
   closeInstructionDialogButton: document.querySelector("#closeInstructionDialogButton"),
@@ -101,6 +148,9 @@ const els = {
 let state = createDefaultState();
 let activeRequest = null;
 let isComposingMessage = false;
+let activeDetailText = "";
+let activeDetailSaveHandler = null;
+let activeDetailRegenerateHandler = null;
 
 function createRoom(name = "새 채팅방") {
   const provider = getValidProvider(state?.settings?.defaultProvider);
@@ -110,6 +160,7 @@ function createRoom(name = "새 채팅방") {
     provider,
     model: getDefaultModel(provider),
     instruction: "",
+    pinned: false,
     messages: [],
     createdAt: Date.now(),
     updatedAt: Date.now()
@@ -140,7 +191,10 @@ function createDefaultState() {
     ui: {
       leftCollapsed: false,
       rightCollapsed: false,
-      chatFontSize: 16
+      themeId: DEFAULT_THEME_ID,
+      chatFontSize: 16,
+      roomSearch: "",
+      roomSort: "recent"
     },
     rooms: []
   };
@@ -257,6 +311,7 @@ function normalizeState(saved) {
       provider,
       model: initialState.settings.defaultModels[provider],
       instruction: "",
+      pinned: false,
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now()
@@ -266,10 +321,17 @@ function normalizeState(saved) {
   }
 
   initialState.rooms.forEach((room) => {
+    if (typeof room.id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(room.id)) {
+      room.id = crypto.randomUUID();
+    }
     room.provider = getValidProvider(room.provider);
     room.instruction = typeof room.instruction === "string" ? room.instruction : "";
+    room.pinned = Boolean(room.pinned);
     room.messages = Array.isArray(room.messages) ? room.messages : [];
     room.messages.forEach((message) => {
+      if (typeof message.id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(message.id)) {
+        message.id = crypto.randomUUID();
+      }
       if (typeof message.contextText !== "string") {
         delete message.contextText;
       }
@@ -285,7 +347,10 @@ function normalizeState(saved) {
   initialState.ui = {
     leftCollapsed: Boolean(initialState.ui?.leftCollapsed),
     rightCollapsed: Boolean(initialState.ui?.rightCollapsed),
-    chatFontSize: clampNumber(Number(initialState.ui?.chatFontSize ?? 16), 14, 22)
+    themeId: getValidThemeId(initialState.ui?.themeId),
+    chatFontSize: clampNumber(Number(initialState.ui?.chatFontSize ?? 16), 14, 22),
+    roomSearch: String(initialState.ui?.roomSearch || ""),
+    roomSort: initialState.ui?.roomSort === "name" ? "name" : "recent"
   };
 
   if (!initialState.rooms.some((room) => room.id === initialState.activeRoomId)) {
@@ -309,6 +374,14 @@ function getValidProvider(provider) {
 
 function getProviderLabel(provider) {
   return PROVIDERS[getValidProvider(provider)];
+}
+
+function getValidThemeId(themeId) {
+  return Object.hasOwn(THEMES, themeId) ? themeId : DEFAULT_THEME_ID;
+}
+
+function getTheme(themeId = state.ui.themeId) {
+  return THEMES[getValidThemeId(themeId)];
 }
 
 function normalizeProviderModels(provider, models) {
@@ -374,6 +447,16 @@ function getActiveRoom() {
   return state.rooms.find((room) => room.id === state.activeRoomId) || state.rooms[0];
 }
 
+function createMessage(role, text, extra = {}) {
+  return {
+    id: crypto.randomUUID(),
+    role,
+    text,
+    createdAt: Date.now(),
+    ...extra
+  };
+}
+
 function setStatus(message, tone = "neutral") {
   els.statusText.textContent = message;
   els.statusText.dataset.tone = tone;
@@ -394,12 +477,36 @@ function renderModelOptions(select, selectedModel, provider) {
   });
 }
 
+function renderThemeOptions() {
+  els.themeSelect.innerHTML = "";
+  Object.entries(THEMES).forEach(([themeId, theme]) => {
+    const option = document.createElement("option");
+    option.value = themeId;
+    option.textContent = theme.name;
+    option.selected = themeId === state.ui.themeId;
+    els.themeSelect.append(option);
+  });
+}
+
 function renderRooms() {
   const activeRoom = getActiveRoom();
   els.roomList.innerHTML = "";
+  els.roomSearchInput.value = state.ui.roomSearch;
+  els.roomSortSelect.value = state.ui.roomSort;
 
   [...state.rooms]
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .filter((room) => {
+      const query = state.ui.roomSearch.trim().toLowerCase();
+      if (!query) return true;
+      return `${room.title} ${room.messages.at(-1)?.text || ""}`.toLowerCase().includes(query);
+    })
+    .sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      if (state.ui.roomSort === "name") {
+        return a.title.localeCompare(b.title, "ko");
+      }
+      return b.updatedAt - a.updatedAt;
+    })
     .forEach((room) => {
       const button = document.createElement("button");
       button.type = "button";
@@ -409,16 +516,53 @@ function renderRooms() {
       const lastMessage = room.messages.at(-1)?.text || "새 대화";
       const count = room.messages.length;
       button.innerHTML = `
-        <span>
+        <span class="room-copy">
           <span class="room-name"></span>
           <span class="room-subtitle"></span>
         </span>
-        <span class="room-count">${count}</span>
+        <span class="room-actions">
+          <span class="room-pin${room.pinned ? " pinned" : ""}" role="button" aria-label="${room.pinned ? "고정 해제" : "채팅방 고정"}" title="${room.pinned ? "고정 해제" : "채팅방 고정"}">⌃</span>
+          <span class="room-count">${count}</span>
+        </span>
       `;
       button.querySelector(".room-name").textContent = room.title;
       button.querySelector(".room-subtitle").textContent = `${getProviderLabel(room.provider)} · ${lastMessage}`;
       els.roomList.append(button);
     });
+
+  if (!els.roomList.children.length) {
+    const empty = document.createElement("p");
+    empty.className = "room-list-empty";
+    empty.textContent = "검색 결과가 없습니다.";
+    els.roomList.append(empty);
+  }
+}
+
+function renderMessageActions(message) {
+  if (message.pending) return null;
+  const actions = document.createElement("div");
+  actions.className = "message-actions";
+
+  if (message.role === "model") {
+    const showCompressedAction = message.contextText && shouldCompactMessage(message);
+    actions.innerHTML = `
+      <button type="button" data-action="copy-message" data-message-id="${message.id}">복사</button>
+      ${showCompressedAction ? `<button type="button" data-action="show-compact" data-message-id="${message.id}">압축본</button>` : ""}
+      <button type="button" data-action="regenerate-message" data-message-id="${message.id}">다시 생성</button>
+      <button type="button" data-action="branch-message" data-message-id="${message.id}">새 방</button>
+    `;
+    return actions;
+  }
+
+  if (message.role === "error") {
+    actions.innerHTML = `
+      <button type="button" data-action="retry-message" data-message-id="${message.id}">다시 요청</button>
+      <button type="button" data-action="copy-message" data-message-id="${message.id}">복사</button>
+    `;
+    return actions;
+  }
+
+  return null;
 }
 
 function renderMessages() {
@@ -433,6 +577,7 @@ function renderMessages() {
       <p>아직 메시지가 없습니다.</p>
     `;
     els.messageStream.append(empty);
+    renderScrollMinimap();
     scrollMessagesToBottom();
     return;
   }
@@ -440,10 +585,24 @@ function renderMessages() {
   room.messages.forEach((message) => {
     const article = document.createElement("article");
     article.className = `message ${message.role}${message.pending ? " pending" : ""}`;
+    article.dataset.messageId = message.id;
 
     const label = document.createElement("div");
     label.className = "message-label";
-    label.textContent = message.role === "user" ? "You" : message.role === "error" ? "Error" : getProviderLabel(room.provider);
+    const labelText = document.createElement("span");
+    labelText.textContent = message.role === "user" ? "You" : message.role === "error" ? "Error" : getProviderLabel(room.provider);
+    label.append(labelText);
+
+    if (message.role === "model" && message.contextText && shouldCompactMessage(message)) {
+      const compactBadge = document.createElement("button");
+      compactBadge.type = "button";
+      compactBadge.className = "message-badge";
+      compactBadge.dataset.action = "show-compact";
+      compactBadge.dataset.messageId = message.id;
+      compactBadge.title = "다음 요청에는 압축본을 사용합니다.";
+      compactBadge.textContent = "압축";
+      label.append(compactBadge);
+    }
 
     const bubble = document.createElement("div");
     bubble.className = "message-bubble";
@@ -455,9 +614,12 @@ function renderMessages() {
     }
 
     article.append(label, bubble);
+    const actions = renderMessageActions(message);
+    if (actions) article.append(actions);
     els.messageStream.append(article);
   });
 
+  renderScrollMinimap();
   scrollMessagesToBottom();
 }
 
@@ -493,6 +655,8 @@ function renderSettings() {
   els.compactLengthInput.disabled = !state.settings.compactLargeResponses;
   els.compactLengthValue.textContent = `${state.settings.compactResponseLength}자`;
   renderContextSize();
+  renderModelPolicy();
+  renderThemeOptions();
   els.chatFontSizeInput.value = state.ui.chatFontSize;
   els.chatFontSizeValue.textContent = `${state.ui.chatFontSize}px`;
 }
@@ -500,6 +664,7 @@ function renderSettings() {
 function renderUiState() {
   els.appShell.classList.toggle("left-collapsed", state.ui.leftCollapsed);
   els.appShell.classList.toggle("right-collapsed", state.ui.rightCollapsed);
+  document.body.dataset.theme = state.ui.themeId;
   els.appShell.style.setProperty("--chat-font-size", `${state.ui.chatFontSize}px`);
 
   const leftLabel = state.ui.leftCollapsed ? "왼쪽 패널 펼치기" : "왼쪽 패널 접기";
@@ -565,6 +730,15 @@ function updateRoomTitle(title) {
   saveState();
 }
 
+function toggleRoomPinned(roomId) {
+  const room = state.rooms.find((item) => item.id === roomId);
+  if (!room) return;
+  room.pinned = !room.pinned;
+  room.updatedAt = Date.now();
+  renderRooms();
+  saveState();
+}
+
 function focusRoomTitle() {
   els.roomTitleInput.focus();
   els.roomTitleInput.select();
@@ -595,6 +769,7 @@ function saveRoomInstruction() {
   renderHeader();
   renderRooms();
   renderContextSize();
+  renderModelPolicy();
   saveState();
   setStatus(room.instruction ? "채팅방 지침을 저장했습니다." : "채팅방 지침을 비웠습니다.", "success");
 }
@@ -643,6 +818,7 @@ function updateHistoryMessageLimit(value) {
   els.historyLimitInput.value = state.settings.historyMessageLimit;
   els.historyLimitValue.textContent = String(state.settings.historyMessageLimit);
   renderContextSize();
+  renderModelPolicy();
   saveState();
 }
 
@@ -657,6 +833,7 @@ function updateCompactResponseThreshold(value) {
   els.compactThresholdInput.value = state.settings.compactResponseThreshold;
   els.compactThresholdValue.textContent = `${state.settings.compactResponseThreshold}자`;
   renderContextSize();
+  renderModelPolicy();
   saveState();
 }
 
@@ -666,6 +843,15 @@ function updateCompactResponseLength(value) {
   els.compactLengthValue.textContent = `${state.settings.compactResponseLength}자`;
   renderContextSize();
   saveState();
+}
+
+function updateTheme(themeId) {
+  const validThemeId = getValidThemeId(themeId);
+  state.ui.themeId = validThemeId;
+  state.ui.chatFontSize = clampNumber(getTheme(validThemeId).chatFontSize, 14, 22);
+  render();
+  scrollMessagesToBottom();
+  setStatus(`${getTheme(validThemeId).name} 테마를 적용했습니다.`, "success");
 }
 
 function formatMessageRole(role, provider) {
@@ -686,6 +872,64 @@ function buildShareText(room) {
   ];
 
   return lines.join("\n").trim();
+}
+
+function buildPayloadPreviewText() {
+  const room = getActiveRoom();
+  const messages = getPreviewRequestMessages(room, els.messageInput.value);
+  const payload = createRequestPayload(room.provider, room, messages);
+  const stats = getRequestPayloadStats(room.provider, room, messages);
+  const instruction = getRoomInstruction(room);
+  const lines = [
+    `Provider: ${getProviderLabel(room.provider)}`,
+    `Model: ${formatModelLabel(room.model)}`,
+    `Size: ${stats.size}`,
+    `Messages: ${messages.length}`,
+    `Instruction: ${instruction ? "included" : "none"}`,
+    "",
+    "[지침]",
+    instruction || "(없음)",
+    "",
+    "[메시지]",
+    ...messages.flatMap((message, index) => [
+      `${index + 1}. ${message.role === "model" ? "assistant" : message.role}${message.compressed ? " (압축본)" : ""}`,
+      message.text,
+      ""
+    ]),
+    "[Payload JSON]",
+    JSON.stringify(payload, null, 2)
+  ];
+  return lines.join("\n");
+}
+
+function openPayloadPreview() {
+  openDetailDialog("전송 내용 미리보기", "이번 요청에 실제로 포함될 payload입니다.", buildPayloadPreviewText());
+}
+
+function buildStoragePolicyText() {
+  return [
+    "[앱 데이터]",
+    "- 대화방, 메시지, 설정, 모델 목록, 테마, 압축본은 IndexedDB에 저장됩니다.",
+    "- IndexedDB를 사용할 수 없는 브라우저 환경에서는 localStorage로 fallback합니다.",
+    "",
+    "[API key]",
+    "- Gemini/Groq API key는 앱 데이터와 분리해서 저장합니다.",
+    "- 키 저장 체크 ON: localStorage에 저장되어 브라우저를 다시 열어도 유지됩니다.",
+    "- 키 저장 체크 OFF: sessionStorage에 저장되어 현재 세션에서만 유지됩니다.",
+    "",
+    "[범위]",
+    "- 모든 데이터는 현재 브라우저와 현재 기기에만 저장됩니다.",
+    "- 다른 브라우저나 다른 기기로 자동 동기화되지 않습니다.",
+    "- 브라우저 사이트 데이터를 삭제하면 저장된 대화, 설정, API key가 함께 삭제될 수 있습니다."
+  ].join("\n");
+}
+
+function openStoragePolicy() {
+  openDetailDialog(
+    "저장 정책",
+    "앱 데이터는 로컬DB 중심, API key는 별도 브라우저 저장소로 분리합니다.",
+    buildStoragePolicyText()
+  );
 }
 
 async function copyTextToClipboard(text) {
@@ -729,6 +973,48 @@ function closeShareDialog() {
   els.shareDialog.hidden = true;
 }
 
+function openDetailDialog(title, description, text, options = {}) {
+  activeDetailText = text;
+  activeDetailSaveHandler = typeof options.onSave === "function" ? options.onSave : null;
+  activeDetailRegenerateHandler = typeof options.onRegenerate === "function" ? options.onRegenerate : null;
+  els.detailDialogTitle.textContent = title;
+  els.detailDialogDescription.textContent = description;
+  els.detailTextOutput.value = text;
+  els.detailTextOutput.readOnly = !activeDetailSaveHandler;
+  els.saveDetailTextButton.hidden = !activeDetailSaveHandler;
+  els.regenerateDetailTextButton.hidden = !activeDetailRegenerateHandler;
+  els.detailDialog.hidden = false;
+  requestAnimationFrame(() => {
+    els.detailTextOutput.focus();
+    if (els.detailTextOutput.readOnly) {
+      els.detailTextOutput.select();
+    }
+  });
+}
+
+function closeDetailDialog() {
+  els.detailDialog.hidden = true;
+  activeDetailSaveHandler = null;
+  activeDetailRegenerateHandler = null;
+  els.detailTextOutput.readOnly = true;
+  els.saveDetailTextButton.hidden = true;
+  els.regenerateDetailTextButton.hidden = true;
+}
+
+function saveDetailDialogText() {
+  if (!activeDetailSaveHandler) return;
+  activeDetailText = els.detailTextOutput.value.trim();
+  activeDetailSaveHandler(activeDetailText);
+  closeDetailDialog();
+}
+
+function regenerateDetailDialogText() {
+  if (!activeDetailRegenerateHandler) return;
+  activeDetailText = activeDetailRegenerateHandler();
+  els.detailTextOutput.value = activeDetailText;
+  els.detailTextOutput.focus();
+}
+
 async function shareActiveRoom() {
   const room = getActiveRoom();
   const text = buildShareText(room);
@@ -765,6 +1051,122 @@ async function shareActiveRoom() {
   }
 }
 
+function findMessageById(messageId) {
+  const room = getActiveRoom();
+  const index = room.messages.findIndex((message) => message.id === messageId);
+  return { room, index, message: index >= 0 ? room.messages[index] : null };
+}
+
+function findPreviousUserIndex(room, fromIndex) {
+  for (let index = fromIndex - 1; index >= 0; index -= 1) {
+    if (room.messages[index].role === "user") return index;
+  }
+  return -1;
+}
+
+async function retryFromMessage(messageId) {
+  if (activeRequest) return;
+  const { room, index, message } = findMessageById(messageId);
+  if (!message) return;
+  const userIndex = findPreviousUserIndex(room, index);
+  if (userIndex < 0) {
+    setStatus("다시 요청할 사용자 메시지를 찾지 못했습니다.", "error");
+    return;
+  }
+
+  room.messages = room.messages.slice(0, index);
+  const pending = createMessage("model", "응답을 기다리는 중입니다.", { pending: true });
+  room.messages.push(pending);
+  room.updatedAt = Date.now();
+  render();
+  await processRoomRequest(room, pending.id);
+}
+
+async function regenerateMessage(messageId) {
+  if (activeRequest) return;
+  const { room, index, message } = findMessageById(messageId);
+  if (!message || message.role !== "model") return;
+  const userIndex = findPreviousUserIndex(room, index);
+  if (userIndex < 0) {
+    setStatus("다시 생성할 사용자 메시지를 찾지 못했습니다.", "error");
+    return;
+  }
+
+  room.messages = room.messages.slice(0, index);
+  const pending = createMessage("model", "응답을 다시 생성하는 중입니다.", { pending: true });
+  room.messages.push(pending);
+  room.updatedAt = Date.now();
+  render();
+  await processRoomRequest(room, pending.id);
+}
+
+function branchFromMessage(messageId) {
+  const { room, index, message } = findMessageById(messageId);
+  if (!message || index < 0) return;
+  const newRoom = {
+    ...createRoom(`${room.title} 복사`),
+    provider: room.provider,
+    model: room.model,
+    instruction: room.instruction || "",
+    messages: room.messages.slice(0, index + 1).map((item) => ({ ...item, id: crypto.randomUUID() })),
+    pinned: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  state.rooms.push(newRoom);
+  state.activeRoomId = newRoom.id;
+  render();
+  setStatus("선택한 응답까지 새 채팅방으로 복사했습니다.", "success");
+}
+
+async function handleMessageAction(action, messageId) {
+  const { message } = findMessageById(messageId);
+  if (!message) return;
+
+  if (action === "copy-message") {
+    try {
+      await copyTextToClipboard(message.text);
+      setStatus("메시지를 복사했습니다.", "success");
+    } catch {
+      openDetailDialog("메시지 복사", "복사가 차단되어 직접 선택할 수 있게 열었습니다.", message.text);
+    }
+    return;
+  }
+
+  if (action === "show-compact") {
+    openDetailDialog(
+      "압축본 편집",
+      "저장하면 다음 요청부터 이 압축본이 원문 대신 사용됩니다.",
+      message.contextText || createCompressedContextText(message.text),
+      {
+        onRegenerate: () => createCompressedContextText(message.text),
+        onSave: (value) => {
+          message.contextText = value || createCompressedContextText(message.text);
+          renderMessages();
+          renderContextSize();
+          saveState();
+          setStatus("압축본을 저장했습니다.", "success");
+        }
+      }
+    );
+    return;
+  }
+
+  if (action === "retry-message") {
+    await retryFromMessage(messageId);
+    return;
+  }
+
+  if (action === "regenerate-message") {
+    await regenerateMessage(messageId);
+    return;
+  }
+
+  if (action === "branch-message") {
+    branchFromMessage(messageId);
+  }
+}
+
 function getApiKey(provider) {
   return getValidProvider(provider) === "groq" ? els.groqApiKeyInput.value.trim() : els.apiKeyInput.value.trim();
 }
@@ -789,6 +1191,7 @@ function persistProviderApiKey(provider) {
   const storageKey = validProvider === "groq" ? GROQ_API_KEY_STORAGE : GEMINI_API_KEY_STORAGE;
   const persist = validProvider === "groq" ? els.rememberGroqKeyInput.checked : els.rememberKeyInput.checked;
   storeApiKey(storageKey, getApiKey(validProvider), persist);
+  renderKeyStatuses();
 }
 
 function loadSavedApiKey() {
@@ -798,6 +1201,35 @@ function loadSavedApiKey() {
   els.groqApiKeyInput.value = groqLocalKey || sessionStorage.getItem(GROQ_API_KEY_STORAGE) || "";
   els.rememberKeyInput.checked = Boolean(geminiLocalKey);
   els.rememberGroqKeyInput.checked = Boolean(groqLocalKey);
+  renderKeyStatuses();
+}
+
+function getKeyStorageStatus(storageKey, key) {
+  if (!key) return "저장 안 됨";
+  if (localStorage.getItem(storageKey)) return "브라우저 저장";
+  if (sessionStorage.getItem(storageKey)) return "세션 저장";
+  return "입력됨";
+}
+
+function renderKeyStatuses() {
+  els.geminiKeyStatus.textContent = getKeyStorageStatus(GEMINI_API_KEY_STORAGE, getApiKey("gemini"));
+  els.groqKeyStatus.textContent = getKeyStorageStatus(GROQ_API_KEY_STORAGE, getApiKey("groq"));
+}
+
+function clearProviderApiKey(provider) {
+  const validProvider = getValidProvider(provider);
+  const storageKey = validProvider === "groq" ? GROQ_API_KEY_STORAGE : GEMINI_API_KEY_STORAGE;
+  localStorage.removeItem(storageKey);
+  sessionStorage.removeItem(storageKey);
+  if (validProvider === "groq") {
+    els.groqApiKeyInput.value = "";
+    els.rememberGroqKeyInput.checked = false;
+  } else {
+    els.apiKeyInput.value = "";
+    els.rememberKeyInput.checked = false;
+  }
+  renderKeyStatuses();
+  setStatus(`${getProviderLabel(validProvider)} API 키를 삭제했습니다.`, "success");
 }
 
 async function loadModels() {
@@ -896,6 +1328,16 @@ function clipText(text, maxLength) {
   return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
+function clipContextSummary(text, maxLength) {
+  if (text.length <= maxLength) return text;
+  const clipped = text.slice(0, Math.max(0, maxLength - 1)).trimEnd();
+  const sentenceEnd = Math.max(clipped.lastIndexOf("."), clipped.lastIndexOf("!"), clipped.lastIndexOf("?"));
+  if (sentenceEnd > maxLength * 0.55) {
+    return clipped.slice(0, sentenceEnd + 1);
+  }
+  return `${clipped}…`;
+}
+
 function shouldCompactMessage(message) {
   return (
     state.settings.compactLargeResponses &&
@@ -905,21 +1347,226 @@ function shouldCompactMessage(message) {
   );
 }
 
+const CONTEXT_STOP_WORDS = new Set([
+  "그리고",
+  "그러나",
+  "하지만",
+  "또한",
+  "입니다",
+  "합니다",
+  "됩니다",
+  "있는",
+  "없는",
+  "대한",
+  "관련",
+  "경우",
+  "정도",
+  "내용",
+  "아래",
+  "다음",
+  "이번",
+  "위해",
+  "사용",
+  "가능",
+  "필요",
+  "the",
+  "and",
+  "for",
+  "with",
+  "this",
+  "that",
+  "from",
+  "you",
+  "are",
+  "cm",
+  "mm",
+  "ml",
+  "kg",
+  "mg",
+  "ppm"
+]);
+
+function cleanMarkdownLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || (/^\|?[\s:|-]+\|?$/.test(trimmed) && trimmed.includes("-"))) {
+    return "";
+  }
+
+  return normalizeWhitespace(
+    trimmed
+      .replace(/<br\s*\/?>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/^```.*$/g, "")
+      .replace(/^#{1,6}\s*/, "")
+      .replace(/^>\s*/, "")
+      .replace(/^\s*[-*+]\s+\[[ xX]\]\s*/, "")
+      .replace(/^\s*[-*+]\s+/, "")
+      .replace(/^\s*\d+[.)]\s*/, "")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/(\d)\s*[~∼]\s*(\d)/g, "$1-$2")
+      .replace(/\s[-–—]\s/g, " ")
+      .replace(/[*_`#]/g, "")
+      .replace(/~{2,}/g, "")
+      .replace(/[|]/g, " ")
+      .replace(/[•·●○◆◇▶▷▪▫■□]/g, " ")
+      .replace(/[\u{1F300}-\u{1FAFF}]/gu, "")
+      .replace(/\s*[-=]{3,}\s*/g, " ")
+      .replace(/\s+([.,!?;:])/g, "$1")
+  );
+}
+
+function splitLongContextLine(line) {
+  if (line.length <= 180) return [line];
+  const sentences = line.match(/[^.!?。！？]+[.!?。！？]?/g) || [];
+  const cleaned = sentences.flatMap((sentence) => splitContextChunk(normalizeWhitespace(sentence))).filter((sentence) => sentence.length >= 14);
+  return cleaned.length ? cleaned : [clipText(line, 180)];
+}
+
+function splitContextChunk(text, maxLength = 160) {
+  if (text.length <= maxLength) return [text];
+  const chunks = [];
+  let remaining = text;
+
+  while (remaining.length > maxLength) {
+    const breakAt = Math.max(80, remaining.lastIndexOf(" ", maxLength));
+    chunks.push(remaining.slice(0, breakAt).trim());
+    remaining = remaining.slice(breakAt).trim();
+  }
+
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+function getContextCandidates(text) {
+  return text
+    .split(/\n+/)
+    .flatMap((line) => splitLongContextLine(cleanMarkdownLine(line)))
+    .map((line) => normalizeWhitespace(line))
+    .filter(isUsefulContextCandidate);
+}
+
+function getContextTokens(text) {
+  return (text.toLowerCase().match(/[가-힣a-z0-9]{2,}/g) || []).filter(
+    (token) => !CONTEXT_STOP_WORDS.has(token) && !/^\d+$/.test(token)
+  );
+}
+
+function isUsefulContextCandidate(candidate) {
+  if (candidate.length < 14) return false;
+  if (/^[\d\s.,:;()/-]+$/.test(candidate)) return false;
+  const symbols = (candidate.match(/[|_*#<>{}\[\]`~]/g) || []).length;
+  if (symbols > candidate.length * 0.08) return false;
+  return getContextTokens(candidate).length >= 2 || candidate.length >= 24;
+}
+
+function extractContextKeywords(candidates) {
+  const counts = new Map();
+  getContextTokens(candidates.join(" ")).forEach((token) => {
+    counts.set(token, (counts.get(token) || 0) + 1);
+  });
+
+  return new Map(
+    [...counts.entries()]
+      .filter(([, count]) => count > 1)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"))
+      .slice(0, 12)
+  );
+}
+
+function isImportantContextCandidate(candidate) {
+  return /(요약|결론|핵심|주의|중요|필수|권장|추천|문제|원인|해결|방법|단계|변경|파일|테스트|오류|에러|설정|위험|안전|불가|해야|필요|먼저|최종|한 줄|summary|conclusion|important|warning|error|fix|test|file|next|must|should|recommend)/i.test(
+    candidate
+  );
+}
+
+function isConclusionContextCandidate(candidate) {
+  return /(요약|결론|핵심|최종|한 줄|주의|중요|summary|conclusion|important|warning)/i.test(candidate);
+}
+
+function scoreContextCandidate(candidate, index, keywords) {
+  const lower = candidate.toLowerCase();
+  let score = 0;
+
+  keywords.forEach((count, keyword) => {
+    if (lower.includes(keyword)) score += Math.min(count, 3);
+  });
+
+  if (isImportantContextCandidate(candidate)) score += 4;
+  if (/^(요약|결론|핵심|최종|한 줄|주의|중요|summary|conclusion|important|warning)\b/i.test(candidate)) score += 5;
+  if (/[0-9]/.test(candidate)) score += 0.5;
+  if (candidate.length >= 35 && candidate.length <= 180) score += 1;
+  if (candidate.length > 220) score -= 1.5;
+  if (index < 5) score += 1.4 - index * 0.2;
+
+  const symbolCount = (candidate.match(/[=|_*#<>{}\[\]`~]/g) || []).length;
+  return score - symbolCount * 0.45;
+}
+
+function isNearDuplicateContext(candidate, selected) {
+  const tokens = new Set(getContextTokens(candidate));
+  if (!tokens.size) return false;
+
+  return selected.some((item) => {
+    const itemTokens = new Set(getContextTokens(item));
+    if (!itemTokens.size) return false;
+    const shorterSize = Math.min(tokens.size, itemTokens.size);
+    let overlap = 0;
+    tokens.forEach((token) => {
+      if (itemTokens.has(token)) overlap += 1;
+    });
+    return overlap / shorterSize > 0.72;
+  });
+}
+
+function uniqueContextCandidates(candidates) {
+  return candidates.reduce((items, candidate) => {
+    if (!isNearDuplicateContext(candidate, items)) items.push(candidate);
+    return items;
+  }, []);
+}
+
 function createCompressedContextText(text, maxLength = state.settings.compactResponseLength) {
-  const normalized = normalizeWhitespace(text);
+  const normalized = normalizeWhitespace(cleanMarkdownLine(text));
   if (normalized.length <= maxLength) return normalized;
 
-  const lines = text
-    .split(/\n+/)
-    .map((line) => normalizeWhitespace(line.replace(/^#{1,6}\s*/, "").replace(/^[-*]\s+/, "").replace(/^\d+[.)]\s+/, "")))
-    .filter(Boolean);
-  const importantPattern = /^(요약|결론|핵심|주의|원인|해결|변경|파일|테스트|오류|에러|명령|코드|다음|summary|conclusion|important|warning|error|fix|test|file|next)\b/i;
-  const important = lines.filter((line) => importantPattern.test(line)).slice(0, 5);
-  const fallback = lines.slice(0, 5);
-  const source = important.length ? important : fallback;
-  const summary = source.join(" / ") || normalized;
+  const candidates = getContextCandidates(text);
+  if (!candidates.length) {
+    return clipContextSummary(`요약: ${normalized}`, maxLength);
+  }
 
-  return `[긴 응답 압축본] ${clipText(summary, maxLength)}`;
+  const keywords = extractContextKeywords(candidates);
+  const topic = candidates.find((candidate, index) => index < 5 && candidate.length <= 140);
+  const forcedImportant = candidates.filter(isConclusionContextCandidate).slice(-2);
+  const selected = candidates
+    .map((candidate, index) => ({
+      candidate,
+      index,
+      score: scoreContextCandidate(candidate, index, keywords)
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .reduce((items, item) => {
+      const limit = maxLength < 350 ? 3 : maxLength < 900 ? 5 : 7;
+      if (items.length >= limit) return items;
+      if (!isNearDuplicateContext(item.candidate, items.map((selectedItem) => selectedItem.candidate))) {
+        items.push(item);
+      }
+      return items;
+    }, [])
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.candidate);
+
+  const importantSelected = selected.filter(isImportantContextCandidate);
+  const regularSelected = selected.filter((candidate) => !isImportantContextCandidate(candidate));
+  const prioritized = uniqueContextCandidates([...forcedImportant, ...importantSelected, ...regularSelected]);
+  const bodyParts = topic ? prioritized.filter((candidate) => !isNearDuplicateContext(candidate, [topic])) : prioritized;
+  const body = bodyParts.join(" ") || candidates.slice(0, 3).join(" ");
+  const keywordText = [...keywords.keys()].slice(0, 5).join(", ");
+  const topicText = topic ? `주제: ${topic}. ` : "";
+  const keywordPrefix = keywordText ? `핵심 키워드: ${keywordText}. ` : "";
+
+  return clipContextSummary(`요약: ${topicText}${keywordPrefix}${body}`, maxLength);
 }
 
 function getMessageContextText(message) {
@@ -1057,6 +1704,16 @@ function renderContextSize() {
   els.contextSizeText.dataset.tone = stats.bytes > 512 * 1024 ? "warning" : "neutral";
 }
 
+function renderModelPolicy() {
+  const room = getActiveRoom();
+  const parts = [
+    getRoomInstruction(room) ? "지침 포함" : "지침 없음",
+    state.settings.includeHistory ? `이전 최대 ${state.settings.historyMessageLimit}개` : "현재 메시지만",
+    state.settings.compactLargeResponses ? `압축 ${state.settings.compactResponseThreshold}자 이상` : "압축 꺼짐"
+  ];
+  els.modelPolicyText.textContent = parts.join(" · ");
+}
+
 function extractGeminiText(data) {
   const parts = data.candidates?.[0]?.content?.parts || [];
   const text = parts.map((part) => part.text || "").join("\n").trim();
@@ -1178,6 +1835,11 @@ function requestModelResponse(room, key, messages, signal) {
 async function sendMessage(event) {
   event.preventDefault();
 
+  if (activeRequest) {
+    abortActiveRequest();
+    return;
+  }
+
   if (isComposingMessage) {
     els.messageInput.focus();
     setStatus("한글 입력을 확정한 뒤 전송하세요.");
@@ -1199,21 +1861,39 @@ async function sendMessage(event) {
   if (!text || activeRequest) return;
 
   persistApiKeys();
-  room.messages.push({ role: "user", text, createdAt: Date.now() });
-  room.messages.push({ role: "model", text: "응답을 기다리는 중입니다.", pending: true, createdAt: Date.now() });
+  room.messages.push(createMessage("user", text));
+  const pending = createMessage("model", "응답을 기다리는 중입니다.", { pending: true });
+  room.messages.push(pending);
   room.updatedAt = Date.now();
   clearComposerInput();
   render();
+  await processRoomRequest(room, pending.id);
+}
+
+async function processRoomRequest(room, pendingId) {
+  const provider = getValidProvider(room.provider);
+  const key = getApiKey(provider);
+  if (!key) {
+    const pending = room.messages.find((message) => message.id === pendingId);
+    if (pending) {
+      pending.role = "error";
+      pending.pending = false;
+      pending.text = `${getProviderLabel(provider)} API 키를 입력하세요.`;
+    }
+    setStatus(`${getProviderLabel(provider)} API 키를 입력하세요.`, "error");
+    render();
+    return;
+  }
 
   const requestMessages = getRequestMessages(room);
   const requestStats = getRequestPayloadStats(provider, room, requestMessages);
   const controller = new AbortController();
-  activeRequest = controller;
-  els.sendButton.disabled = true;
+  activeRequest = { controller, roomId: room.id, pendingId };
+  renderSendButtonState();
   setStatus(`${getProviderLabel(provider)} ${formatModelLabel(room.model)} 응답 생성 중입니다. 전송 ${requestStats.size}.`);
 
   try {
-    const pending = room.messages.findLast((message) => message.pending);
+    const pending = room.messages.find((message) => message.id === pendingId);
     let data = null;
 
     for (let retryIndex = 0; retryIndex <= HIGH_DEMAND_RETRY_DELAYS_MS.length; retryIndex += 1) {
@@ -1249,7 +1929,7 @@ async function sendMessage(event) {
       }
     }
   } catch (error) {
-    const pending = room.messages.findLast((message) => message.pending);
+    const pending = room.messages.find((message) => message.id === pendingId);
     if (pending) {
       pending.role = "error";
       pending.pending = false;
@@ -1258,9 +1938,29 @@ async function sendMessage(event) {
     setStatus(error.name === "AbortError" ? "요청이 취소되었습니다." : error.message, "error");
   } finally {
     activeRequest = null;
-    els.sendButton.disabled = false;
+    renderSendButtonState();
     room.updatedAt = Date.now();
     render();
+  }
+}
+
+function abortActiveRequest() {
+  if (!activeRequest) return;
+  activeRequest.controller.abort();
+}
+
+function renderSendButtonState() {
+  const icon = els.sendButton.querySelector("span");
+  if (activeRequest) {
+    els.sendButton.disabled = false;
+    els.sendButton.setAttribute("aria-label", "요청 중지");
+    els.sendButton.title = "요청 중지";
+    icon.textContent = "■";
+  } else {
+    els.sendButton.disabled = false;
+    els.sendButton.setAttribute("aria-label", "보내기");
+    els.sendButton.title = "보내기";
+    icon.textContent = "↑";
   }
 }
 
@@ -1283,7 +1983,53 @@ function clearComposerInput() {
 function scrollMessagesToBottom() {
   requestAnimationFrame(() => {
     els.messageStream.scrollTop = els.messageStream.scrollHeight;
+    updateScrollMinimapThumb();
   });
+}
+
+function renderScrollMinimap() {
+  const room = getActiveRoom();
+  els.scrollMinimapTrack.innerHTML = "";
+
+  const messages = room.messages;
+  if (!messages.length) {
+    updateScrollMinimapThumb();
+    return;
+  }
+
+  messages.forEach((message, index) => {
+    const compressed = Boolean(message.contextText && shouldCompactMessage(message));
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = `minimap-marker ${message.role}${compressed ? " compressed" : ""}`;
+    marker.dataset.messageId = message.id;
+    marker.style.top = `${messages.length === 1 ? 50 : (index / (messages.length - 1)) * 100}%`;
+    marker.title = message.role === "user" ? "사용자 메시지" : message.role === "error" ? "오류 메시지" : compressed ? "AI 응답, 압축됨" : "AI 응답";
+    els.scrollMinimapTrack.append(marker);
+  });
+
+  updateScrollMinimapThumb();
+}
+
+function updateScrollMinimapThumb() {
+  const stream = els.messageStream;
+  const maxScroll = stream.scrollHeight - stream.clientHeight;
+  if (maxScroll <= 0) {
+    els.scrollMinimapThumb.style.height = "100%";
+    els.scrollMinimapThumb.style.top = "0%";
+    return;
+  }
+
+  const thumbHeight = Math.max(10, (stream.clientHeight / stream.scrollHeight) * 100);
+  const top = (stream.scrollTop / maxScroll) * (100 - thumbHeight);
+  els.scrollMinimapThumb.style.height = `${thumbHeight}%`;
+  els.scrollMinimapThumb.style.top = `${top}%`;
+}
+
+function scrollToMessage(messageId) {
+  const target = els.messageStream.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+  if (!target) return;
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function toggleLeftPanel() {
@@ -1324,6 +2070,20 @@ els.shareRoomButton.addEventListener("click", shareActiveRoom);
 els.toggleSidebarButton.addEventListener("click", toggleLeftPanel);
 els.toggleSettingsPanelButton.addEventListener("click", toggleRightPanel);
 els.closeShareDialogButton.addEventListener("click", closeShareDialog);
+els.closeDetailDialogButton.addEventListener("click", closeDetailDialog);
+els.saveDetailTextButton.addEventListener("click", saveDetailDialogText);
+els.regenerateDetailTextButton.addEventListener("click", regenerateDetailDialogText);
+els.copyDetailTextButton.addEventListener("click", async () => {
+  try {
+    await copyTextToClipboard(els.detailTextOutput.value);
+    closeDetailDialog();
+    setStatus("내용을 복사했습니다.", "success");
+  } catch {
+    els.detailTextOutput.focus();
+    els.detailTextOutput.select();
+    setStatus("복사가 차단되어 텍스트를 직접 선택했습니다.", "error");
+  }
+});
 els.copyShareTextButton.addEventListener("click", async () => {
   try {
     await copyTextToClipboard(els.shareTextOutput.value);
@@ -1340,9 +2100,51 @@ els.closeInstructionDialogButton.addEventListener("click", closeInstructionDialo
 els.saveInstructionButton.addEventListener("click", saveRoomInstruction);
 els.clearInstructionButton.addEventListener("click", clearRoomInstruction);
 
+els.messageStream.addEventListener("click", async (event) => {
+  const actionButton = event.target.closest("[data-action]");
+  if (!actionButton) return;
+  await handleMessageAction(actionButton.dataset.action, actionButton.dataset.messageId);
+});
+
+els.scrollMinimapTrack.addEventListener("click", (event) => {
+  const marker = event.target.closest(".minimap-marker");
+  if (marker) {
+    scrollToMessage(marker.dataset.messageId);
+    return;
+  }
+
+  const rect = els.scrollMinimapTrack.getBoundingClientRect();
+  const ratio = clampNumber((event.clientY - rect.top) / rect.height, 0, 1);
+  const maxScroll = els.messageStream.scrollHeight - els.messageStream.clientHeight;
+  els.messageStream.scrollTo({ top: maxScroll * ratio, behavior: "smooth" });
+});
+
+els.messageStream.addEventListener("scroll", updateScrollMinimapThumb);
+
 els.roomList.addEventListener("click", (event) => {
+  const pinButton = event.target.closest(".room-pin");
+  if (pinButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const roomButton = event.target.closest(".room-item");
+    if (roomButton) toggleRoomPinned(roomButton.dataset.roomId);
+    return;
+  }
+
   const roomButton = event.target.closest(".room-item");
   if (roomButton) switchRoom(roomButton.dataset.roomId);
+});
+
+els.roomSearchInput.addEventListener("input", (event) => {
+  state.ui.roomSearch = event.target.value;
+  renderRooms();
+  saveState();
+});
+
+els.roomSortSelect.addEventListener("change", (event) => {
+  state.ui.roomSort = event.target.value === "name" ? "name" : "recent";
+  renderRooms();
+  saveState();
 });
 
 els.roomTitleInput.addEventListener("change", (event) => updateRoomTitle(event.target.value));
@@ -1359,6 +2161,11 @@ els.roomModelSelect.addEventListener("change", (event) => updateRoomModel(event.
 els.defaultProviderSelect.addEventListener("change", (event) => updateDefaultProvider(event.target.value));
 els.defaultModelSelect.addEventListener("change", (event) => updateDefaultModel(event.target.value));
 els.composer.addEventListener("submit", sendMessage);
+els.sendButton.addEventListener("click", (event) => {
+  if (!activeRequest) return;
+  event.preventDefault();
+  abortActiveRequest();
+});
 els.messageInput.addEventListener("input", handleMessageInput);
 els.messageInput.addEventListener("compositionstart", () => {
   isComposingMessage = true;
@@ -1393,12 +2200,15 @@ els.maxTokensInput.addEventListener("change", (event) => {
 });
 
 els.includeHistoryInput.addEventListener("change", (event) => updateIncludeHistory(event.target.checked));
+els.openPayloadPreviewButton.addEventListener("click", openPayloadPreview);
+els.openStoragePolicyButton.addEventListener("click", openStoragePolicy);
 els.historyLimitInput.addEventListener("change", (event) => updateHistoryMessageLimit(event.target.value));
 els.historyLimitInput.addEventListener("input", (event) => {
   const value = normalizeHistoryMessageLimit(event.target.value);
   state.settings.historyMessageLimit = value;
   els.historyLimitValue.textContent = String(value);
   renderContextSize();
+  renderModelPolicy();
 });
 els.compactResponsesInput.addEventListener("change", (event) => updateCompactLargeResponses(event.target.checked));
 els.compactThresholdInput.addEventListener("change", (event) => updateCompactResponseThreshold(event.target.value));
@@ -1407,6 +2217,7 @@ els.compactThresholdInput.addEventListener("input", (event) => {
   state.settings.compactResponseThreshold = value;
   els.compactThresholdValue.textContent = `${value}자`;
   renderContextSize();
+  renderModelPolicy();
 });
 els.compactLengthInput.addEventListener("change", (event) => updateCompactResponseLength(event.target.value));
 els.compactLengthInput.addEventListener("input", (event) => {
@@ -1415,6 +2226,8 @@ els.compactLengthInput.addEventListener("input", (event) => {
   els.compactLengthValue.textContent = `${value}자`;
   renderContextSize();
 });
+
+els.themeSelect.addEventListener("change", (event) => updateTheme(event.target.value));
 
 els.chatFontSizeInput.addEventListener("input", (event) => {
   state.ui.chatFontSize = clampNumber(Number(event.target.value), 14, 22);
@@ -1428,6 +2241,8 @@ els.apiKeyInput.addEventListener("change", () => persistProviderApiKey("gemini")
 els.groqApiKeyInput.addEventListener("change", () => persistProviderApiKey("groq"));
 els.rememberKeyInput.addEventListener("change", () => persistProviderApiKey("gemini"));
 els.rememberGroqKeyInput.addEventListener("change", () => persistProviderApiKey("groq"));
+els.clearGeminiKeyButton.addEventListener("click", () => clearProviderApiKey("gemini"));
+els.clearGroqKeyButton.addEventListener("click", () => clearProviderApiKey("groq"));
 els.loadModelsButton.addEventListener("click", loadModels);
 
 els.toggleKeyButton.addEventListener("click", () => {
@@ -1449,6 +2264,7 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeMobilePanels();
     closeShareDialog();
+    closeDetailDialog();
     closeInstructionDialog();
   }
 });
@@ -1458,6 +2274,7 @@ async function initializeApp() {
   state = await loadState();
   render();
   resizeComposer();
+  renderSendButtonState();
 }
 
 initializeApp().catch((error) => {
@@ -1466,5 +2283,6 @@ initializeApp().catch((error) => {
   loadSavedApiKey();
   render();
   resizeComposer();
+  renderSendButtonState();
   setStatus("로컬 DB를 열지 못해 임시 상태로 시작했습니다.", "error");
 });
