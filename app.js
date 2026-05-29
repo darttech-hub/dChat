@@ -82,7 +82,6 @@ const els = {
   roomTitleInput: document.querySelector("#roomTitleInput"),
   roomMeta: document.querySelector("#roomMeta"),
   roomModelSelect: document.querySelector("#roomModelSelect"),
-  editRoomTitleButton: document.querySelector("#editRoomTitleButton"),
   openInstructionButton: document.querySelector("#openInstructionButton"),
   shareRoomButton: document.querySelector("#shareRoomButton"),
   deleteRoomButton: document.querySelector("#deleteRoomButton"),
@@ -707,17 +706,19 @@ function renderMessageActions(message) {
   actions.className = "message-actions";
   const bookmarkLabel = message.bookmarked ? "★" : "☆";
   const bookmarkTitle = message.bookmarked ? "찜 해제" : "찜하기";
-  const bookmarkButton = `<button type="button" class="bookmark-action icon-only${message.bookmarked ? " active" : ""}" data-action="toggle-bookmark" data-message-id="${message.id}" data-tooltip="${bookmarkTitle}" aria-label="${bookmarkTitle}">${bookmarkLabel}</button>`;
-  const copyButton = createIconActionButton("copy-message", message.id, "복사", "copy");
-  const regenerateButton = createIconActionButton("regenerate-message", message.id, "다시 생성", "refresh");
-  const branchButton = createIconActionButton("branch-message", message.id, "브랜치", "branch");
+  const bookmarkDescription = message.bookmarked ? "찜한 대화에서 제거합니다" : "중요한 AI 응답을 찜한 대화에 저장합니다";
+  const bookmarkButton = `<button type="button" class="bookmark-action icon-only${message.bookmarked ? " active" : ""}" data-action="toggle-bookmark" data-message-id="${message.id}" data-tooltip="${bookmarkTitle} : ${bookmarkDescription}" aria-label="${bookmarkTitle}">${bookmarkLabel}</button>`;
+  const copyButton = createIconActionButton("copy-message", message.id, "복사", "응답 내용을 클립보드에 복사합니다", "copy");
+  const compactButton = createIconActionButton("show-compact", message.id, "압축본", "다음 요청에 보낼 압축본을 확인합니다", "archive");
+  const regenerateButton = createIconActionButton("regenerate-message", message.id, "다시 생성", "같은 질문으로 답변을 다시 받습니다", "refresh");
+  const branchButton = createIconActionButton("branch-message", message.id, "브랜치", "이 응답까지 새 채팅방으로 복사합니다", "branch");
 
   if (message.role === "model") {
     const showCompressedAction = message.contextText && shouldCompactMessage(message);
     actions.innerHTML = `
       ${bookmarkButton}
       ${copyButton}
-      ${showCompressedAction ? `<button type="button" data-action="show-compact" data-message-id="${message.id}">압축본</button>` : ""}
+      ${showCompressedAction ? compactButton : ""}
       ${regenerateButton}
       ${branchButton}
     `;
@@ -727,7 +728,7 @@ function renderMessageActions(message) {
   if (message.role === "error") {
     actions.innerHTML = `
       ${bookmarkButton}
-      <button type="button" data-action="retry-message" data-message-id="${message.id}">다시 요청</button>
+      <button type="button" data-action="retry-message" data-message-id="${message.id}" data-tooltip="다시 요청 : 실패한 요청을 다시 보냅니다" aria-label="다시 요청">다시 요청</button>
       ${copyButton}
     `;
     return actions;
@@ -736,9 +737,9 @@ function renderMessageActions(message) {
   return null;
 }
 
-function createIconActionButton(action, messageId, label, iconName) {
+function createIconActionButton(action, messageId, label, description, iconName) {
   return `
-    <button type="button" class="icon-only" data-action="${action}" data-message-id="${messageId}" data-tooltip="${label}" aria-label="${label}">
+    <button type="button" class="icon-only" data-action="${action}" data-message-id="${messageId}" data-tooltip="${label} : ${description}" aria-label="${label}">
       ${getActionIcon(iconName)}
     </button>
   `;
@@ -767,6 +768,13 @@ function getActionIcon(iconName) {
         <circle cx="6" cy="18" r="3"></circle>
         <path d="M6 9v6"></path>
         <path d="M9 6h3a6 6 0 0 1 6 6v3"></path>
+      </svg>
+    `,
+    archive: `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <rect x="3" y="3" width="18" height="4" rx="1"></rect>
+        <path d="M5 7v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7"></path>
+        <path d="M10 12h4"></path>
       </svg>
     `
   };
@@ -945,7 +953,7 @@ function renderMessages() {
       compactBadge.className = "message-badge";
       compactBadge.dataset.action = "show-compact";
       compactBadge.dataset.messageId = message.id;
-      compactBadge.title = "다음 요청에는 압축본을 사용합니다.";
+      compactBadge.title = "압축 : 다음 요청에는 압축본을 사용합니다.";
       compactBadge.textContent = "압축";
       label.append(compactBadge);
     }
@@ -971,7 +979,7 @@ function renderMessages() {
 
 function renderHeader() {
   const room = getActiveRoom();
-  const headerActionButtons = [els.editRoomTitleButton, els.openInstructionButton, els.shareRoomButton, els.deleteRoomButton];
+  const headerActionButtons = [els.openInstructionButton, els.shareRoomButton, els.deleteRoomButton];
   if (isBookmarkView()) {
     const count = getBookmarkedMessages().length;
     els.roomTitleInput.value = "찜한 대화";
@@ -996,8 +1004,10 @@ function renderHeader() {
   const instructionMeta = getRoomInstruction(room) ? " · 지침 있음" : "";
   els.roomMeta.textContent = `${room.messages.length} messages · ${userCount} turns · ${getProviderLabel(room.provider)} / ${formatModelLabel(room.model)}${instructionMeta}`;
   els.openInstructionButton.classList.toggle("active", Boolean(getRoomInstruction(room)));
-  els.openInstructionButton.title = getRoomInstruction(room) ? "채팅방 지침 수정" : "채팅방 지침 추가";
-  els.openInstructionButton.setAttribute("aria-label", els.openInstructionButton.title);
+  const hasInstruction = Boolean(getRoomInstruction(room));
+  const instructionLabel = hasInstruction ? "채팅방 지침 수정" : "채팅방 지침 추가";
+  els.openInstructionButton.dataset.tooltip = `지침 : 항상 함께 보낼 채팅방 지침을 ${hasInstruction ? "수정합니다" : "추가합니다"}`;
+  els.openInstructionButton.setAttribute("aria-label", instructionLabel);
 }
 
 function renderSettings() {
@@ -1124,12 +1134,6 @@ function toggleRoomPinned(roomId) {
   room.updatedAt = Date.now();
   renderRooms();
   saveState();
-}
-
-function focusRoomTitle() {
-  if (isBookmarkView()) return;
-  els.roomTitleInput.focus();
-  els.roomTitleInput.select();
 }
 
 function getRoomInstruction(room) {
@@ -2718,7 +2722,6 @@ els.roomTitleInput.addEventListener("keydown", (event) => {
     els.roomTitleInput.blur();
   }
 });
-els.editRoomTitleButton.addEventListener("click", focusRoomTitle);
 els.roomProviderSelect.addEventListener("change", (event) => updateRoomProvider(event.target.value));
 els.roomModelSelect.addEventListener("change", (event) => updateRoomModel(event.target.value));
 els.defaultProviderSelect.addEventListener("change", (event) => updateDefaultProvider(event.target.value));

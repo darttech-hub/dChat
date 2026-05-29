@@ -50,20 +50,20 @@
 
         <section class="chat-header" aria-label="현재 채팅방">
           <div>
-            <input class="room-title-input" id="roomTitleInput" type="text" aria-label="채팅방 이름" />
+            <div class="room-title-row">
+              <input class="room-title-input" id="roomTitleInput" type="text" aria-label="채팅방 이름" />
+              <span class="room-title-edit-hint" aria-hidden="true">✎</span>
+            </div>
             <p id="roomMeta">0 messages</p>
           </div>
           <div class="chat-header-actions">
-            <button class="edit-title-button" id="editRoomTitleButton" type="button" aria-label="채팅방 이름 수정" title="채팅방 이름 수정">
-              <span aria-hidden="true">✎</span>
-            </button>
-            <button class="instruction-button" id="openInstructionButton" type="button" aria-label="채팅방 지침" title="채팅방 지침">
+            <button class="instruction-button" id="openInstructionButton" type="button" aria-label="채팅방 지침" data-tooltip="지침 : 항상 함께 보낼 채팅방 지침을 편집합니다">
               <span aria-hidden="true">¶</span>
             </button>
-            <button class="share-button" id="shareRoomButton" type="button" aria-label="대화 공유" title="대화 공유">
+            <button class="share-button" id="shareRoomButton" type="button" aria-label="대화 공유" data-tooltip="공유 : 현재 대화 내용을 복사해 공유합니다">
               <span aria-hidden="true">↗</span>
             </button>
-            <button class="danger-icon" id="deleteRoomButton" type="button" aria-label="채팅방 삭제">
+            <button class="danger-icon" id="deleteRoomButton" type="button" aria-label="채팅방 삭제" data-tooltip="삭제 : 현재 채팅방을 삭제합니다">
               <span aria-hidden="true">×</span>
             </button>
           </div>

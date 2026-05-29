@@ -404,7 +404,6 @@ button {
 .ghost-button,
 .send-button,
 .icon-button,
-.edit-title-button,
 .instruction-button,
 .share-button,
 .danger-icon,
@@ -448,7 +447,6 @@ button {
 .secondary-action:hover,
 .ghost-button:hover,
 .icon-button:hover,
-.edit-title-button:hover,
 .instruction-button:hover,
 .share-button:hover,
 .panel-toggle:hover {
@@ -650,8 +648,17 @@ button {
   min-width: 0;
 }
 
-.room-title-input {
+.room-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: min(100%, 540px);
+  min-width: 0;
+}
+
+.room-title-input {
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 12ch;
   padding: 0;
   border: 0;
@@ -660,6 +667,26 @@ button {
   color: var(--text);
   font-size: clamp(1.18rem, 1.9vw, 1.75rem);
   font-weight: 800;
+}
+
+.room-title-edit-hint {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 800;
+  opacity: 0.32;
+  pointer-events: none;
+  transition: color 90ms ease, opacity 90ms ease;
+}
+
+.room-title-row:hover .room-title-edit-hint,
+.room-title-row:focus-within .room-title-edit-hint {
+  color: var(--teal-dark);
+  opacity: 0.62;
+}
+
+.room-title-input:disabled + .room-title-edit-hint {
+  display: none;
 }
 
 .chat-header-actions {
@@ -702,7 +729,6 @@ select {
 }
 
 .share-button,
-.edit-title-button,
 .instruction-button,
 .danger-icon,
 .icon-button {
@@ -719,12 +745,40 @@ select {
   display: none !important;
 }
 
-.share-button {
-  color: var(--teal-dark);
+.chat-header-actions button[data-tooltip] {
+  position: relative;
 }
 
-.edit-title-button {
-  color: var(--navy);
+.chat-header-actions button[data-tooltip]::after {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 12;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  box-shadow: 0 8px 18px rgba(23, 33, 38, 0.14);
+  color: var(--text);
+  content: attr(data-tooltip);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 70ms ease, transform 70ms ease;
+  white-space: nowrap;
+}
+
+.chat-header-actions button[data-tooltip]:hover::after,
+.chat-header-actions button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.share-button {
+  color: var(--teal-dark);
 }
 
 .instruction-button {
@@ -1281,8 +1335,11 @@ select {
   font-weight: 800;
 }
 
-.message-actions button.icon-only {
+.message-actions button[data-tooltip] {
   position: relative;
+}
+
+.message-actions button.icon-only {
   display: grid;
   place-items: center;
   width: 30px;
@@ -1301,7 +1358,7 @@ select {
   stroke-width: 2;
 }
 
-.message-actions button.icon-only[data-tooltip]::after {
+.message-actions button[data-tooltip]::after {
   position: absolute;
   bottom: calc(100% + 7px);
   left: 50%;
@@ -1323,8 +1380,8 @@ select {
   white-space: nowrap;
 }
 
-.message-actions button.icon-only[data-tooltip]:hover::after,
-.message-actions button.icon-only[data-tooltip]:focus-visible::after {
+.message-actions button[data-tooltip]:hover::after,
+.message-actions button[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
 }
