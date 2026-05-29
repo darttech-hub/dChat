@@ -983,6 +983,7 @@ function renderHeader() {
   if (isBookmarkView()) {
     const count = getBookmarkedMessages().length;
     els.roomTitleInput.value = "찜한 대화";
+    updateRoomTitleInputSize("찜한 대화");
     els.roomTitleInput.disabled = true;
     els.roomMeta.textContent = `${count}개 저장됨 · 클릭하면 원래 위치로 이동`;
     headerActionButtons.forEach((button) => {
@@ -1000,6 +1001,7 @@ function renderHeader() {
     button.removeAttribute("aria-hidden");
   });
   els.roomTitleInput.value = room.title;
+  updateRoomTitleInputSize(room.title);
   const userCount = room.messages.filter((message) => message.role === "user").length;
   const instructionMeta = getRoomInstruction(room) ? " · 지침 있음" : "";
   els.roomMeta.textContent = `${room.messages.length} messages · ${userCount} turns · ${getProviderLabel(room.provider)} / ${formatModelLabel(room.model)}${instructionMeta}`;
@@ -1123,8 +1125,15 @@ function updateRoomTitle(title) {
   const room = getActiveRoom();
   room.title = title.trim() || "이름 없는 채팅방";
   room.updatedAt = Date.now();
+  els.roomTitleInput.value = room.title;
+  updateRoomTitleInputSize(room.title);
   renderRooms();
   saveState();
+}
+
+function updateRoomTitleInputSize(value = els.roomTitleInput.value) {
+  const titleLength = Array.from((value || "이름 없는 채팅방").trim() || "이름 없는 채팅방").length;
+  els.roomTitleInput.size = Math.min(Math.max(titleLength + 1, 6), 34);
 }
 
 function toggleRoomPinned(roomId) {
@@ -2716,6 +2725,7 @@ els.roomSortSelect.addEventListener("change", (event) => {
 
 els.roomTitleInput.addEventListener("change", (event) => updateRoomTitle(event.target.value));
 els.roomTitleInput.addEventListener("blur", (event) => updateRoomTitle(event.target.value));
+els.roomTitleInput.addEventListener("input", (event) => updateRoomTitleInputSize(event.target.value));
 els.roomTitleInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();

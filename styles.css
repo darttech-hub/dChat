@@ -649,17 +649,19 @@ button {
 }
 
 .room-title-row {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  width: min(100%, 540px);
+  width: auto;
+  max-width: min(100%, 540px);
   min-width: 0;
 }
 
 .room-title-input {
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 12ch;
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 6ch;
+  max-width: calc(100% - 24px);
   padding: 0;
   border: 0;
   outline: 0;
@@ -1839,7 +1841,7 @@ input[type="range"] {
   }
 
   .room-title-input {
-    width: 100%;
+    max-width: calc(100% - 24px);
     font-size: 1.22rem;
   }
 
