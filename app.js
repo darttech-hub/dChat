@@ -1173,7 +1173,7 @@ function updateRoomTitle(title) {
 
 function updateRoomTitleInputSize(value = els.roomTitleInput.value) {
   const titleLength = Array.from((value || "이름 없는 채팅방").trim() || "이름 없는 채팅방").length;
-  els.roomTitleInput.size = Math.min(Math.max(titleLength + 3, 8), 38);
+  els.roomTitleInput.size = Math.min(Math.max(titleLength + 4, 8), 38);
 }
 
 function toggleRoomPinned(roomId) {
@@ -2600,7 +2600,7 @@ function updateScrollMinimapThumb() {
 function scrollToMessage(messageId) {
   const target = els.messageStream.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
   if (!target) return;
-  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function highlightMessage(messageId) {
