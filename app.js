@@ -1173,7 +1173,7 @@ function updateRoomTitle(title) {
 
 function updateRoomTitleInputSize(value = els.roomTitleInput.value) {
   const titleLength = Array.from((value || "이름 없는 채팅방").trim() || "이름 없는 채팅방").length;
-  els.roomTitleInput.size = Math.min(Math.max(titleLength + 4, 8), 38);
+  els.roomTitleInput.size = Math.min(Math.max(titleLength + 5, 8), 38);
 }
 
 function toggleRoomPinned(roomId) {
