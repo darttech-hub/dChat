@@ -1,5 +1,6 @@
 :root {
   color-scheme: light;
+  --app-height: 100dvh;
   --bg: #f5f7f8;
   --surface: #ffffff;
   --surface-strong: #fdfefe;
@@ -292,11 +293,13 @@ html,
 body {
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: var(--app-height);
   background: var(--body-bg);
   color: var(--text);
   font-family: var(--app-font);
@@ -322,6 +325,7 @@ button {
   grid-template-columns: var(--left-column) minmax(0, 1fr) var(--right-column);
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height);
   min-height: 0;
   width: 100%;
   overflow: hidden;
@@ -621,12 +625,17 @@ button {
   min-width: 0;
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height);
   min-height: 0;
   overflow: hidden;
 }
 
 .mobile-topbar {
   flex: 0 0 auto;
+  display: none;
+}
+
+.mobile-title-button {
   display: none;
 }
 
@@ -653,7 +662,7 @@ button {
 .room-title-row {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: auto;
   max-width: min(100%, 540px);
   min-width: 0;
@@ -663,7 +672,7 @@ button {
   flex: 0 1 auto;
   width: auto;
   min-width: 6ch;
-  max-width: calc(100% - 24px);
+  max-width: calc(100% - 36px);
   padding: 0;
   border: 0;
   outline: 0;
@@ -1367,8 +1376,8 @@ select {
 .message-actions button[data-tooltip]::after {
   position: absolute;
   bottom: calc(100% + 7px);
-  left: 50%;
-  z-index: 8;
+  left: 0;
+  z-index: 18;
   padding: 5px 7px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -1381,7 +1390,8 @@ select {
   line-height: 1;
   opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, 2px);
+  text-align: left;
+  transform: translateY(2px);
   transition: opacity 70ms ease, transform 70ms ease;
   white-space: nowrap;
 }
@@ -1389,7 +1399,13 @@ select {
 .message-actions button[data-tooltip]:hover::after,
 .message-actions button[data-tooltip]:focus-visible::after {
   opacity: 1;
-  transform: translate(-50%, 0);
+  transform: translateY(0);
+}
+
+.message.user .message-actions button[data-tooltip]::after {
+  right: 0;
+  left: auto;
+  text-align: right;
 }
 
 .message-actions button:hover {
@@ -1705,7 +1721,8 @@ input[type="range"] {
     z-index: 30;
     height: 100vh;
     height: 100dvh;
-    max-height: 100dvh;
+    height: var(--app-height);
+    max-height: var(--app-height);
     width: min(360px, 86vw);
     padding: calc(18px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom));
     overflow-y: auto;
@@ -1721,12 +1738,51 @@ input[type="range"] {
   .mobile-topbar {
     display: flex;
     align-items: center;
+    gap: 10px;
     justify-content: space-between;
     min-height: 58px;
-    padding: 10px 14px;
+    padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
     border-bottom: 1px solid var(--line);
     background: var(--panel-bg);
     backdrop-filter: blur(14px);
+  }
+
+  .mobile-title-button {
+    display: grid;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    line-height: 1.15;
+    text-align: left;
+  }
+
+  .mobile-title-button strong,
+  .mobile-title-button span {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-title-button strong {
+    font-size: 0.88rem;
+    font-weight: 900;
+  }
+
+  .mobile-title-button span {
+    margin-top: 2px;
+    color: var(--muted);
+    display: none;
+    font-size: 0.76rem;
+    font-weight: 800;
+  }
+
+  .app-shell.mobile-header-collapsed .mobile-title-button span {
+    display: block;
   }
 
   .mobile-topbar .icon-button:first-child {
@@ -1772,12 +1828,22 @@ input[type="range"] {
 }
 
 @media (max-width: 760px) {
+  html,
+  body {
+    width: 100%;
+    height: var(--app-height);
+    min-height: var(--app-height);
+  }
+
   body {
     background: var(--bg);
+    position: fixed;
+    inset: 0;
   }
 
   .app-shell {
     display: block;
+    height: var(--app-height);
   }
 
   .app-shell.left-collapsed .sidebar {
@@ -1816,6 +1882,7 @@ input[type="range"] {
     bottom: 0;
     left: 0;
     z-index: 30;
+    height: var(--app-height);
     width: min(330px, 86vw);
     transform: translateX(-100%);
     transition: transform 180ms ease;
@@ -1833,15 +1900,21 @@ input[type="range"] {
   .chat-panel {
     height: 100vh;
     height: 100dvh;
+    height: var(--app-height);
     min-height: 0;
   }
 
   .chat-header {
     align-items: flex-start;
+    display: flex;
     flex-direction: column;
     gap: 12px;
     min-height: auto;
     padding: 16px;
+  }
+
+  .app-shell.mobile-header-collapsed .chat-header {
+    display: none;
   }
 
   .room-title-input {

@@ -2,7 +2,7 @@
 <html lang="ko">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>dChat</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
@@ -42,7 +42,10 @@
           <button class="icon-button" id="openRoomsButton" type="button" aria-label="채팅방 열기">
             <span aria-hidden="true">☰</span>
           </button>
-          <strong>dChat</strong>
+          <button class="mobile-title-button" id="mobileRoomTitleButton" type="button" aria-label="채팅방 상세 펼치기">
+            <strong>dChat</strong>
+            <span id="mobileRoomTitle">첫 채팅방</span>
+          </button>
           <button class="icon-button" id="openSettingsButton" type="button" aria-label="설정 열기">
             <span aria-hidden="true">⚙</span>
           </button>

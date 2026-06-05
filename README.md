@@ -90,6 +90,80 @@ GroqCloud 팀에서는 owner 또는 developer 권한이 있어야 API key를 만
 
 공식 문서: [Groq Quickstart](https://console.groq.com/docs/quickstart)
 
+## 모델 선택 참고
+
+`모델 불러오기`를 누르면 API key 권한과 제공자 정책에 따라 선택 가능한 모델 목록이 표시됩니다. 모델 목록은 제공자 정책, 계정 권한, 시점에 따라 달라질 수 있습니다.
+
+무료 사용 기준으로 처음 선택할 모델은 다음을 권장합니다.
+
+- Groq: `groq/compound`
+- Gemini: `gemini-3.5-flash`
+
+### Groq 모델 목록 예시
+
+아래 목록은 Groq 모델 선택 화면에 표시된 순서입니다.
+
+- `allam-2-7b`
+- `canopylabs/orpheus-arabic-saudi`
+- `canopylabs/orpheus-v1-english`
+- `groq/compound`
+- `groq/compound-mini`
+- `llama-3.1-8b-instant`
+- `llama-3.3-70b-versatile`
+- `meta-llama/llama-4-scout-17b-16e-instruct`
+- `meta-llama/llama-prompt-guard-2-22m`
+- `meta-llama/llama-prompt-guard-2-86m`
+- `openai/gpt-oss-120b`
+- `openai/gpt-oss-20b`
+- `openai/gpt-oss-safeguard-20b`
+- `qwen/qwen3-32b`
+- `whisper-large-v3`
+- `whisper-large-v3-turbo`
+
+### Gemini 모델 목록 예시
+
+아래 목록은 Gemini 모델 선택 화면에 표시된 순서입니다.
+
+- `antigravity-preview-05-2026`
+- `deep-research-max-preview-04-2026`
+- `deep-research-preview-04-2026`
+- `deep-research-pro-preview-12-2025`
+- `gemini-2.0-flash`
+- `gemini-2.0-flash-001`
+- `gemini-2.0-flash-lite`
+- `gemini-2.0-flash-lite-001`
+- `gemini-2.5-computer-use-preview-10-2025`
+- `gemini-2.5-flash`
+- `gemini-2.5-flash-image`
+- `gemini-2.5-flash-lite`
+- `gemini-2.5-flash-preview-tts`
+- `gemini-2.5-pro`
+- `gemini-2.5-pro-preview-tts`
+- `gemini-3-flash-preview`
+- `gemini-3-pro-image`
+- `gemini-3-pro-image-preview`
+- `gemini-3-pro-preview`
+- `gemini-3.1-flash-image`
+- `gemini-3.1-flash-image-preview`
+- `gemini-3.1-flash-lite`
+- `gemini-3.1-flash-lite-preview`
+- `gemini-3.1-flash-tts-preview`
+- `gemini-3.1-pro-preview`
+- `gemini-3.1-pro-preview-customtools`
+- `gemini-3.5-flash`
+- `gemini-flash-latest`
+- `gemini-flash-lite-latest`
+- `gemini-pro-latest`
+- `gemini-robotics-er-1.5-preview`
+- `gemini-robotics-er-1.6-preview`
+- `gemma-4-26b-a4b-it`
+- `gemma-4-31b-it`
+- `lyria-3-clip-preview`
+- `lyria-3-pro-preview`
+- `nano-banana-pro-preview`
+- `gemini-1.5-flash`
+- `gemini-1.5-pro`
+
 ## 기본 사용법
 
 1. 우측 `API` 영역에 Gemini 또는 Groq API key를 입력합니다.
@@ -97,7 +171,7 @@ GroqCloud 팀에서는 owner 또는 developer 권한이 있어야 API key를 만
 3. 필요하면 `모델 불러오기`를 눌러 계정에서 사용 가능한 모델 목록을 가져옵니다.
 4. 가운데 입력창에 메시지를 입력하고 전송합니다.
 5. 새 주제는 좌측 `새 채팅방`으로 분리해서 관리합니다.
-6. 채팅방 제목은 상단 제목을 직접 수정하거나 연필 버튼으로 편집합니다.
+6. 채팅방 제목은 상단 제목을 직접 수정합니다.
 7. 문단 아이콘 버튼에서 채팅방 지침을 추가할 수 있습니다.
 
 AI 응답 하단의 아이콘 버튼은 다음 기능입니다.
@@ -106,7 +180,7 @@ AI 응답 하단의 아이콘 버튼은 다음 기능입니다.
 - 복사 아이콘: 응답 내용 복사
 - 리프레시 아이콘: 같은 사용자 메시지 기준으로 다시 생성
 - 브랜치 아이콘: 선택한 응답까지 새 채팅방으로 복사
-- `압축본`: 긴 응답의 다음 요청용 압축본 확인 및 편집
+- 아카이브 아이콘: 긴 응답의 다음 요청용 압축본 확인 및 편집
 
 아이콘 위에 마우스를 올리거나 키보드 포커스를 두면 버튼 이름이 빠르게 표시됩니다.
 

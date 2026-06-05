@@ -80,6 +80,8 @@ const els = {
   toggleSidebarButton: document.querySelector("#toggleSidebarButton"),
   toggleSettingsPanelButton: document.querySelector("#toggleSettingsPanelButton"),
   roomTitleInput: document.querySelector("#roomTitleInput"),
+  mobileRoomTitleButton: document.querySelector("#mobileRoomTitleButton"),
+  mobileRoomTitle: document.querySelector("#mobileRoomTitle"),
   roomMeta: document.querySelector("#roomMeta"),
   roomModelSelect: document.querySelector("#roomModelSelect"),
   openInstructionButton: document.querySelector("#openInstructionButton"),
@@ -155,6 +157,35 @@ let isComposingMessage = false;
 let activeDetailText = "";
 let activeDetailSaveHandler = null;
 let activeDetailRegenerateHandler = null;
+let mobileHeaderCollapsed = false;
+
+function updateAppViewportHeight() {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight;
+  if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) return;
+  document.documentElement.style.setProperty("--app-height", `${Math.round(viewportHeight)}px`);
+}
+
+function stabilizeAppViewport() {
+  updateAppViewportHeight();
+  if (window.scrollX || window.scrollY) {
+    window.scrollTo(0, 0);
+  }
+}
+
+function queueAppViewportStabilization() {
+  stabilizeAppViewport();
+  requestAnimationFrame(stabilizeAppViewport);
+  window.setTimeout(stabilizeAppViewport, 80);
+  window.setTimeout(stabilizeAppViewport, 260);
+}
+
+function setMobileHeaderCollapsed(collapsed) {
+  mobileHeaderCollapsed = Boolean(collapsed);
+  els.appShell.classList.toggle("mobile-header-collapsed", mobileHeaderCollapsed);
+  els.mobileRoomTitleButton.setAttribute("aria-expanded", String(!mobileHeaderCollapsed));
+  els.mobileRoomTitleButton.setAttribute("aria-label", mobileHeaderCollapsed ? "채팅방 상세 펼치기" : "채팅방 상세 접기");
+  queueAppViewportStabilization();
+}
 
 function normalizeTimestamp(value, fallback = Date.now()) {
   const timestamp = Number(value);
@@ -982,6 +1013,8 @@ function renderHeader() {
   const headerActionButtons = [els.openInstructionButton, els.shareRoomButton, els.deleteRoomButton];
   if (isBookmarkView()) {
     const count = getBookmarkedMessages().length;
+    els.mobileRoomTitle.textContent = "찜한 대화";
+    els.mobileRoomTitleButton.title = "찜한 대화";
     els.roomTitleInput.value = "찜한 대화";
     updateRoomTitleInputSize("찜한 대화");
     els.roomTitleInput.disabled = true;
@@ -1000,6 +1033,8 @@ function renderHeader() {
     button.disabled = false;
     button.removeAttribute("aria-hidden");
   });
+  els.mobileRoomTitle.textContent = room.title;
+  els.mobileRoomTitleButton.title = room.title;
   els.roomTitleInput.value = room.title;
   updateRoomTitleInputSize(room.title);
   const userCount = room.messages.filter((message) => message.role === "user").length;
@@ -1044,6 +1079,9 @@ function renderUiState() {
   els.appShell.classList.toggle("left-collapsed", state.ui.leftCollapsed);
   els.appShell.classList.toggle("right-collapsed", state.ui.rightCollapsed);
   els.appShell.classList.toggle("bookmark-view", bookmarkView);
+  els.appShell.classList.toggle("mobile-header-collapsed", mobileHeaderCollapsed);
+  els.mobileRoomTitleButton.setAttribute("aria-expanded", String(!mobileHeaderCollapsed));
+  els.mobileRoomTitleButton.setAttribute("aria-label", mobileHeaderCollapsed ? "채팅방 상세 펼치기" : "채팅방 상세 접기");
   document.body.dataset.theme = state.ui.themeId;
   els.appShell.style.setProperty("--chat-font-size", `${state.ui.chatFontSize}px`);
   els.composer.hidden = bookmarkView;
@@ -1080,6 +1118,7 @@ function render() {
 function switchRoom(roomId) {
   state.activeRoomId = roomId;
   state.ui.activeView = VIEW_ROOM;
+  mobileHeaderCollapsed = false;
   clearComposerInput();
   closeMobilePanels();
   render();
@@ -1091,6 +1130,7 @@ function addRoom() {
   state.rooms.push(room);
   state.activeRoomId = room.id;
   state.ui.activeView = VIEW_ROOM;
+  mobileHeaderCollapsed = false;
   clearComposerInput();
   render();
   els.roomTitleInput.focus();
@@ -1133,7 +1173,7 @@ function updateRoomTitle(title) {
 
 function updateRoomTitleInputSize(value = els.roomTitleInput.value) {
   const titleLength = Array.from((value || "이름 없는 채팅방").trim() || "이름 없는 채팅방").length;
-  els.roomTitleInput.size = Math.min(Math.max(titleLength + 1, 6), 34);
+  els.roomTitleInput.size = Math.min(Math.max(titleLength + 3, 8), 38);
 }
 
 function toggleRoomPinned(roomId) {
@@ -1261,6 +1301,7 @@ function updateTheme(themeId) {
 function openBookmarksView() {
   if (!getBookmarkedMessages().length) return;
   state.ui.activeView = VIEW_BOOKMARKS;
+  mobileHeaderCollapsed = false;
   closeMobilePanels();
   render();
   els.messageStream.scrollTop = 0;
@@ -2362,6 +2403,7 @@ async function sendMessage(event) {
   room.updatedAt = Date.now();
   clearComposerInput();
   render();
+  queueAppViewportStabilization();
   await processRoomRequest(room, pending.id);
 }
 
@@ -2487,12 +2529,14 @@ function resizeComposer() {
 function handleMessageInput() {
   resizeComposer();
   renderContextSize();
+  queueAppViewportStabilization();
 }
 
 function clearComposerInput() {
   els.messageInput.value = "";
   resizeComposer();
   renderContextSize();
+  queueAppViewportStabilization();
 }
 
 function scrollMessagesToBottom() {
@@ -2500,6 +2544,13 @@ function scrollMessagesToBottom() {
     els.messageStream.scrollTop = els.messageStream.scrollHeight;
     updateScrollMinimapThumb();
   });
+}
+
+function handleMessageStreamScroll() {
+  updateScrollMinimapThumb();
+  if (!mobileHeaderCollapsed && els.messageStream.scrollTop > 16) {
+    setMobileHeaderCollapsed(true);
+  }
 }
 
 function renderScrollMinimap() {
@@ -2618,6 +2669,7 @@ els.deleteRoomButton.addEventListener("click", deleteActiveRoom);
 els.shareRoomButton.addEventListener("click", shareActiveRoom);
 els.toggleSidebarButton.addEventListener("click", toggleLeftPanel);
 els.toggleSettingsPanelButton.addEventListener("click", toggleRightPanel);
+els.mobileRoomTitleButton.addEventListener("click", () => setMobileHeaderCollapsed(!mobileHeaderCollapsed));
 els.closeShareDialogButton.addEventListener("click", closeShareDialog);
 els.closeDetailDialogButton.addEventListener("click", closeDetailDialog);
 els.saveDetailTextButton.addEventListener("click", saveDetailDialogText);
@@ -2689,7 +2741,8 @@ els.scrollMinimapTrack.addEventListener("click", (event) => {
   els.messageStream.scrollTo({ top: maxScroll * ratio, behavior: "smooth" });
 });
 
-els.messageStream.addEventListener("scroll", updateScrollMinimapThumb);
+els.messageStream.addEventListener("scroll", handleMessageStreamScroll);
+els.messageStream.addEventListener("pointerdown", () => setMobileHeaderCollapsed(true));
 
 els.roomList.addEventListener("click", (event) => {
   const bookmarkRoom = event.target.closest("[data-view='bookmarks']");
@@ -2750,6 +2803,7 @@ els.messageInput.addEventListener("compositionend", () => {
   isComposingMessage = false;
   resizeComposer();
   renderContextSize();
+  queueAppViewportStabilization();
 });
 els.messageInput.addEventListener("keydown", (event) => {
   const isImeConfirming = event.isComposing || isComposingMessage || event.keyCode === 229;
@@ -2760,7 +2814,17 @@ els.messageInput.addEventListener("keydown", (event) => {
 });
 els.messageInput.addEventListener("blur", () => {
   isComposingMessage = false;
+  queueAppViewportStabilization();
 });
+els.messageInput.addEventListener("focus", () => {
+  setMobileHeaderCollapsed(true);
+  queueAppViewportStabilization();
+});
+
+window.addEventListener("resize", queueAppViewportStabilization);
+window.addEventListener("orientationchange", queueAppViewportStabilization);
+window.visualViewport?.addEventListener("resize", queueAppViewportStabilization);
+window.visualViewport?.addEventListener("scroll", queueAppViewportStabilization);
 
 els.temperatureInput.addEventListener("input", (event) => {
   state.settings.temperature = Number(event.target.value);
@@ -2846,6 +2910,7 @@ window.addEventListener("keydown", (event) => {
 });
 
 async function initializeApp() {
+  updateAppViewportHeight();
   loadSavedApiKey();
   state = await loadState();
   render();
@@ -2855,6 +2920,7 @@ async function initializeApp() {
 
 initializeApp().catch((error) => {
   console.error(error);
+  updateAppViewportHeight();
   state = normalizeState(null);
   loadSavedApiKey();
   render();
