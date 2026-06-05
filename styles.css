@@ -770,6 +770,7 @@ select {
   top: calc(100% + 8px);
   right: 0;
   z-index: 12;
+  width: max-content;
   max-width: min(280px, calc(100vw - 32px));
   padding: 6px 8px;
   border: 1px solid var(--line);
@@ -785,7 +786,9 @@ select {
   pointer-events: none;
   transform: translateY(-2px);
   transition: opacity 70ms ease, transform 70ms ease;
+  overflow-wrap: break-word;
   white-space: normal;
+  word-break: keep-all;
 }
 
 .chat-header-actions button[data-tooltip]:hover::after,
@@ -1395,6 +1398,7 @@ select {
   bottom: calc(100% + 7px);
   left: 0;
   z-index: 18;
+  width: max-content;
   max-width: min(280px, calc(100vw - 32px));
   padding: 5px 7px;
   border: 1px solid var(--line);
@@ -1411,7 +1415,9 @@ select {
   text-align: left;
   transform: translateY(2px);
   transition: opacity 70ms ease, transform 70ms ease;
+  overflow-wrap: break-word;
   white-space: normal;
+  word-break: keep-all;
 }
 
 .message-actions button[data-tooltip]:hover::after,
@@ -1946,6 +1952,12 @@ input[type="range"] {
 
   .message-stream {
     padding: 18px 14px;
+  }
+
+  .chat-header-actions button[data-tooltip]::after,
+  .message-actions button[data-tooltip]::after {
+    width: min(220px, calc(100vw - 44px));
+    max-width: calc(100vw - 44px);
   }
 
   .bookmark-board-header {

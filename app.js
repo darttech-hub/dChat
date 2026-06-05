@@ -2540,9 +2540,15 @@ function clearComposerInput() {
 }
 
 function scrollMessagesToBottom() {
-  requestAnimationFrame(() => {
-    els.messageStream.scrollTop = els.messageStream.scrollHeight;
+  const applyScroll = () => {
+    els.messageStream.scrollTop = Math.max(0, els.messageStream.scrollHeight - els.messageStream.clientHeight);
     updateScrollMinimapThumb();
+  };
+
+  requestAnimationFrame(() => {
+    applyScroll();
+    requestAnimationFrame(applyScroll);
+    window.setTimeout(applyScroll, 90);
   });
 }
 
@@ -2915,6 +2921,7 @@ async function initializeApp() {
   state = await loadState();
   render();
   resizeComposer();
+  scrollMessagesToBottom();
   renderSendButtonState();
 }
 
@@ -2925,6 +2932,7 @@ initializeApp().catch((error) => {
   loadSavedApiKey();
   render();
   resizeComposer();
+  scrollMessagesToBottom();
   renderSendButtonState();
   setStatus("로컬 DB를 열지 못해 임시 상태로 시작했습니다.", "error");
 });
