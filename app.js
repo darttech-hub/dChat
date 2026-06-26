@@ -70,6 +70,7 @@ const VIEW_ROOM = "room";
 const VIEW_BOOKMARKS = "bookmarks";
 const BOOKMARK_MODE_PREVIEW = "preview";
 const BOOKMARK_MODE_FULL = "full";
+const STALE_PENDING_MESSAGE_TEXT = "이전 요청이 완료되지 않아 실패했습니다.\n다시 요청 버튼으로 재시도할 수 있습니다.";
 
 const els = {
   appShell: document.querySelector("#appShell"),
@@ -378,6 +379,11 @@ function normalizeState(saved) {
         message.id = crypto.randomUUID();
       }
       message.createdAt = normalizeTimestamp(message.createdAt, roomCreatedAt);
+      if (message.pending) {
+        message.role = "error";
+        message.pending = false;
+        message.text = STALE_PENDING_MESSAGE_TEXT;
+      }
       message.bookmarked = Boolean(message.bookmarked) && message.role !== "user";
       if (!message.bookmarked || !Number.isFinite(Number(message.bookmarkOrder))) {
         delete message.bookmarkOrder;
@@ -732,9 +738,15 @@ function renderRooms() {
 
 function renderMessageActions(message) {
   if (message.pending) return null;
-  if (message.role === "user") return null;
   const actions = document.createElement("div");
   actions.className = "message-actions";
+  const userCopyButton = createIconActionButton("copy-message", message.id, "복사", "내 메시지를 클립보드에 복사합니다", "copy");
+
+  if (message.role === "user") {
+    actions.innerHTML = userCopyButton;
+    return actions;
+  }
+
   const bookmarkLabel = message.bookmarked ? "★" : "☆";
   const bookmarkTitle = message.bookmarked ? "찜 해제" : "찜하기";
   const bookmarkDescription = message.bookmarked ? "찜한 대화에서 제거합니다" : "중요한 AI 응답을 찜한 대화에 저장합니다";
@@ -1413,6 +1425,29 @@ async function copyTextToClipboard(text) {
   }
 }
 
+function showCopyFeedback(anchor, text = "복사됨") {
+  if (!anchor?.getBoundingClientRect) return;
+
+  const rect = anchor.getBoundingClientRect();
+  const feedback = document.createElement("span");
+  feedback.className = "copy-feedback";
+  feedback.textContent = text;
+  document.body.append(feedback);
+
+  const feedbackRect = feedback.getBoundingClientRect();
+  const maxLeft = Math.max(8, window.innerWidth - feedbackRect.width - 8);
+  const left = clampNumber(rect.left + rect.width / 2 - feedbackRect.width / 2, 8, maxLeft);
+  const top = Math.max(8, rect.top - feedbackRect.height - 8);
+  feedback.style.left = `${left}px`;
+  feedback.style.top = `${top}px`;
+
+  requestAnimationFrame(() => feedback.classList.add("show"));
+  window.setTimeout(() => {
+    feedback.classList.remove("show");
+    window.setTimeout(() => feedback.remove(), 180);
+  }, 900);
+}
+
 function openShareDialog(text) {
   els.shareTextOutput.value = text;
   els.shareDialog.hidden = false;
@@ -1634,7 +1669,7 @@ function moveBookmarkedMessage(messageId, roomId, direction) {
   setStatus("찜한 대화 순서를 변경했습니다.", "success");
 }
 
-async function handleMessageAction(action, messageId, roomId) {
+async function handleMessageAction(action, messageId, roomId, actionButton) {
   const { message } = findMessageById(messageId, roomId);
   if (!message) return;
 
@@ -1651,6 +1686,7 @@ async function handleMessageAction(action, messageId, roomId) {
   if (action === "copy-message") {
     try {
       await copyTextToClipboard(message.text);
+      showCopyFeedback(actionButton);
       setStatus("메시지를 복사했습니다.", "success");
     } catch {
       openDetailDialog("메시지 복사", "복사가 차단되어 직접 선택할 수 있게 열었습니다.", message.text);
@@ -2680,9 +2716,10 @@ els.closeShareDialogButton.addEventListener("click", closeShareDialog);
 els.closeDetailDialogButton.addEventListener("click", closeDetailDialog);
 els.saveDetailTextButton.addEventListener("click", saveDetailDialogText);
 els.regenerateDetailTextButton.addEventListener("click", regenerateDetailDialogText);
-els.copyDetailTextButton.addEventListener("click", async () => {
+els.copyDetailTextButton.addEventListener("click", async (event) => {
   try {
     await copyTextToClipboard(els.detailTextOutput.value);
+    showCopyFeedback(event.currentTarget);
     closeDetailDialog();
     setStatus("내용을 복사했습니다.", "success");
   } catch {
@@ -2691,9 +2728,10 @@ els.copyDetailTextButton.addEventListener("click", async () => {
     setStatus("복사가 차단되어 텍스트를 직접 선택했습니다.", "error");
   }
 });
-els.copyShareTextButton.addEventListener("click", async () => {
+els.copyShareTextButton.addEventListener("click", async (event) => {
   try {
     await copyTextToClipboard(els.shareTextOutput.value);
+    showCopyFeedback(event.currentTarget);
     closeShareDialog();
     setStatus("대화 내용을 복사했습니다.", "success");
   } catch {
@@ -2716,7 +2754,7 @@ els.messageStream.addEventListener("click", async (event) => {
 
   const actionButton = event.target.closest("[data-action]");
   if (actionButton) {
-    await handleMessageAction(actionButton.dataset.action, actionButton.dataset.messageId, actionButton.dataset.roomId);
+    await handleMessageAction(actionButton.dataset.action, actionButton.dataset.messageId, actionButton.dataset.roomId, actionButton);
     return;
   }
 

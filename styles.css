@@ -317,6 +317,30 @@ button {
   cursor: pointer;
 }
 
+.copy-feedback {
+  position: fixed;
+  z-index: 80;
+  padding: 5px 8px;
+  border: 1px solid var(--badge-border);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  box-shadow: 0 8px 18px rgba(23, 33, 38, 0.16);
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+
+.copy-feedback.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .app-shell {
   --left-column: minmax(240px, 280px);
   --right-column: minmax(250px, 300px);
@@ -1102,6 +1126,7 @@ select {
 }
 
 .message.user {
+  position: relative;
   align-self: flex-end;
 }
 
@@ -1160,6 +1185,8 @@ select {
 }
 
 .message.user .message-label {
+  justify-self: end;
+  padding-right: 34px;
   text-align: right;
 }
 
@@ -1356,7 +1383,21 @@ select {
 }
 
 .message.user .message-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
   justify-content: flex-end;
+}
+
+.message.user .message-actions button.icon-only {
+  width: 26px;
+  min-height: 24px;
+  border-radius: 7px;
+}
+
+.message.user .message-actions button.icon-only svg {
+  width: 14px;
+  height: 14px;
 }
 
 .message-actions button {
